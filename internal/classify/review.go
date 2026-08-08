@@ -2,7 +2,8 @@ package classify
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
@@ -40,20 +41,15 @@ func Review(st *store.Store, scenarioID string) (string, error) {
 	}
 
 	fmt.Fprintf(&b, "\nTOTALS BY CATEGORY (ledger signs: outflow negative)\n")
-	cats := make([]domain.Category, 0, len(set.Totals))
-	for c := range set.Totals {
-		cats = append(cats, c)
-	}
-	sort.Slice(cats, func(i, j int) bool { return cats[i] < cats[j] })
-	for _, c := range cats {
+	for _, c := range slices.Sorted(maps.Keys(set.Totals)) {
 		n := len(set.ByCategory(c))
 		fmt.Fprintf(&b, "  %-22s %18s  (%d rows)\n", c, set.Totals[c].StringFixed(2), n)
 	}
 
 	fmt.Fprintf(&b, "\nROWS\n")
 	fmt.Fprintf(&b, "  %-16s %-22s %16s %-7s %s\n", "txn", "category", "amount", "flags", "counterparty / pattern")
-	rows := append([]domain.TxnLabel(nil), set.Txns...)
-	sort.Slice(rows, func(i, j int) bool { return rows[i].TxnID < rows[j].TxnID })
+	rows := slices.Clone(set.Txns)
+	slices.SortFunc(rows, func(a, b domain.TxnLabel) int { return strings.Compare(a.TxnID, b.TxnID) })
 	for _, t := range rows {
 		var flags []string
 		if t.RelatedParty {

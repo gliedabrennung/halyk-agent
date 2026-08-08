@@ -1,12 +1,13 @@
 package classify
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -79,14 +80,9 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	inScope := make(map[string]bool, len(scenarios))
-	for _, s := range scenarios {
-		inScope[s] = true
-	}
-
 	var scoped []*domain.Txn
 	for i := range txns {
-		if inScope[txns[i].ScenarioID] {
+		if slices.Contains(scenarios, txns[i].ScenarioID) {
 			scoped = append(scoped, &txns[i])
 		}
 	}
@@ -187,7 +183,7 @@ func groupPatterns(txns []*domain.Txn) []*patternInfo {
 	for _, p := range index {
 		out = append(out, p)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].pattern < out[j].pattern })
+	slices.SortFunc(out, func(a, b *patternInfo) int { return strings.Compare(a.pattern, b.pattern) })
 	return out
 }
 
@@ -205,7 +201,6 @@ func labelPatterns(
 
 	items := make([]agents.ClassifyItem, len(patterns))
 	ruleHit := make([]Rule, len(patterns))
-	hasRule := make([]bool, len(patterns))
 	for i, p := range patterns {
 		items[i] = agents.ClassifyItem{
 			Pattern:        p.pattern,
@@ -217,7 +212,7 @@ func labelPatterns(
 			Counterparties: p.counterparties,
 		}
 		if r, ok := Classify(p.pattern); ok {
-			ruleHit[i], hasRule[i] = r, true
+			ruleHit[i] = r
 			rep.RuleMatched++
 		}
 	}
@@ -250,9 +245,9 @@ func labelPatterns(
 		res := results[i]
 		var reason string
 		switch {
-		case hasRule[i] && res.Category != ruleHit[i].Cat:
+		case ruleHit[i].fired() && res.Category != ruleHit[i].Cat:
 			reason = "different category"
-		case hasRule[i] && res.Contra != ruleHit[i].Contra:
+		case ruleHit[i].fired() && res.Contra != ruleHit[i].Contra:
 			reason = "different contra flag"
 		case res.Category == domain.CatUnknown:
 			reason = "the fast model would not classify it"
@@ -265,7 +260,7 @@ func labelPatterns(
 			continue
 		}
 		d := agents.Dispute{Item: items[i], ModelCat: res.Category, ModelCtr: res.Contra, Reason: reason}
-		if hasRule[i] {
+		if ruleHit[i].fired() {
 			d.RuleCat, d.RuleCtr = ruleHit[i].Cat, ruleHit[i].Contra
 		} else {
 			d.RuleCat = domain.CatUnknown
@@ -293,16 +288,18 @@ func labelPatterns(
 	labels := make([]domain.Label, len(patterns))
 	for i, p := range patterns {
 		res := results[i]
+		rule := ruleHit[i]
+		correction, escalated := resolved[i]
 		source := "llm"
-		if r, ok := resolved[i]; ok {
-			res, source = r, "escalated"
-		} else if hasRule[i] {
+		if escalated {
+			res, source = correction, "escalated"
+		} else if rule.fired() {
 
 			source = "rule+llm"
 		}
-		if res.Category == domain.CatUnknown && hasRule[i] {
+		if res.Category == domain.CatUnknown && rule.fired() {
 
-			res.Category, res.Contra = ruleHit[i].Cat, ruleHit[i].Contra
+			res.Category, res.Contra = rule.Cat, rule.Contra
 			source = "rule"
 		}
 		labels[i] = domain.Label{
@@ -312,19 +309,14 @@ func labelPatterns(
 			Source:       source,
 			Confidence:   res.Confidence,
 			Rationale:    res.Rationale,
-			RuleCategory: ruleFired(hasRule[i], ruleHit[i]).Cat,
-			RuleID:       ruleFired(hasRule[i], ruleHit[i]).ID,
-			Disputed:     resolvedContains(resolved, i),
+			RuleCategory: rule.Cat,
+			RuleID:       rule.ID,
+			Disputed:     escalated,
 			Count:        p.total,
 			Samples:      p.samples,
 		}
 	}
 	return labels, nil
-}
-
-func resolvedContains(m map[int]agents.ClassifyResult, i int) bool {
-	_, ok := m[i]
-	return ok
 }
 
 func buildLabelSet(
@@ -407,8 +399,8 @@ func assemble(
 			set.UnmatchedParties = append(set.UnmatchedParties, p.Name)
 		}
 	}
-	sort.Strings(set.RelatedParties)
-	sort.Strings(set.UnmatchedParties)
+	slices.Sort(set.RelatedParties)
+	slices.Sort(set.UnmatchedParties)
 
 	warnings := markAdjustments(scenarioID, fb, set, byID, byEntity, txns)
 	for _, name := range set.UnmatchedParties {
@@ -506,21 +498,18 @@ func summarise(set *domain.LabelSet) Row {
 		cat domain.Category
 		n   int
 	}
-	var pairs []kv
+	pairs := make([]kv, 0, len(counts))
 	for c, n := range counts {
 		pairs = append(pairs, kv{c, n})
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].n != pairs[j].n {
-			return pairs[i].n > pairs[j].n
+	slices.SortFunc(pairs, func(a, b kv) int {
+		if a.n != b.n {
+			return cmp.Compare(b.n, a.n)
 		}
-		return pairs[i].cat < pairs[j].cat
+		return cmp.Compare(a.cat, b.cat)
 	})
 	var parts []string
-	for i, p := range pairs {
-		if i == 4 {
-			break
-		}
+	for _, p := range pairs[:min(len(pairs), 4)] {
 		parts = append(parts, fmt.Sprintf("%s=%d", p.cat, p.n))
 	}
 	row.Top = strings.Join(parts, " ")
@@ -548,11 +537,4 @@ func (r *Report) String() string {
 	}
 	fmt.Fprintf(&b, "wrote %s/<scenario>.json and %s/_patterns.json\n%s\n", r.Path, r.Path, line)
 	return b.String()
-}
-
-func ruleFired(has bool, r Rule) Rule {
-	if !has {
-		return Rule{}
-	}
-	return r
 }

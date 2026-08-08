@@ -14,6 +14,9 @@ type Rule struct {
 	Contra bool
 }
 
+// fired отличает сработавшее правило от нулевого Rule.
+func (r Rule) fired() bool { return r.ID != "" }
+
 func rule(id, expr string, cat domain.Category, contra bool) Rule {
 	return Rule{ID: id, Re: regexp.MustCompile(`(?i)` + expr), Cat: cat, Contra: contra}
 }
