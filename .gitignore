@@ -16,5 +16,6 @@
 # Local tooling: IDE and agent settings
 /.idea/
 /.claude/
-# Рабочие записи, не для публикации
+# Рабочие записи и справочники, не для публикации
 /ASSUMPTIONS.md
+/style.md
