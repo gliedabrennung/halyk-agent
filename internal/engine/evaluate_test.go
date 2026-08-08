@@ -692,3 +692,73 @@ func TestTheAuditorsFigureMakesTheTermMeasurableAgain(t *testing.T) {
 		t.Errorf("confidence = %v: nothing is missing once the auditor states the figure", v.Confidence)
 	}
 }
+
+func TestBothSpellingsOfAdjustedEbitdaAgree(t *testing.T) {
+	build := func() *Inputs {
+		return &Inputs{
+			Facts: &domain.FactBase{Adjustments: []domain.Adjustment{{
+				Kind: domain.AdjEBITDAAddBack, Amount: dec("481247.63"), Applied: true,
+			}}},
+			Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+				label("TXN-P1-0001", domain.CatRevenue),
+				label("TXN-P1-0002", domain.CatOperatingCosts),
+				label("TXN-P1-0003", domain.CatOperatingCosts),
+			}},
+			Txns: []domain.Txn{
+				ledgerRow("TXN-P1-0001", 10, "Customer", "7004318.47"),
+				ledgerRow("TXN-P1-0002", 20, "Contractor", "-4683001.13"),
+				ledgerRow("TXN-P1-0003", 30, "Restoration Works", "-481247.63"),
+			},
+		}
+	}
+	spelledOut := spec("(revenue - opex + one_off_items) / revenue", ">=", "0.28",
+		term("revenue", "Выручка"),
+		term("opex", "Операционные расходы"),
+		domain.Term{Name: "one_off_items", Kind: domain.TermStatementNote, Line: "разовые статьи"})
+	named := spec("ebitda / revenue", ">=", "0.28",
+		term("ebitda", "Скорректированная EBITDA"),
+		term("revenue", "Выручка"))
+
+	long, err := Evaluate(spelledOut, build())
+	if err != nil {
+		t.Fatalf("Evaluate spelled out: %v", err)
+	}
+	short, err := Evaluate(named, build())
+	if err != nil {
+		t.Fatalf("Evaluate named: %v", err)
+	}
+	if !short.Actual.Equal(long.Actual) {
+		t.Errorf("actual %s vs %s: one covenant written two ways must give one number",
+			short.Actual, long.Actual)
+	}
+	if short.Status != long.Status {
+		t.Errorf("status %s vs %s", short.Status, long.Status)
+	}
+}
+
+func TestAnAddBackIsNotCountedTwice(t *testing.T) {
+	in := &Inputs{
+		Facts: &domain.FactBase{Adjustments: []domain.Adjustment{{
+			Kind: domain.AdjEBITDAAddBack, Amount: dec("400000"), Applied: true,
+		}}},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+			label("TXN-P1-0001", domain.CatRevenue),
+			label("TXN-P1-0002", domain.CatOperatingCosts),
+		}},
+		Txns: []domain.Txn{
+			ledgerRow("TXN-P1-0001", 10, "Customer", "3000000"),
+			ledgerRow("TXN-P1-0002", 20, "Contractor", "-400000"),
+		},
+	}
+	s := spec("ebitda + one_off_items", ">=", "0",
+		term("ebitda", "EBITDA"),
+		domain.Term{Name: "one_off_items", Kind: domain.TermStatementNote, Line: "разовые статьи"})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("3000000")) {
+		t.Errorf("actual = %s, want 3000000: the add-back belongs to the term that names it", v.Actual)
+	}
+}

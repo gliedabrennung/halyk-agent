@@ -125,7 +125,7 @@ func computeTerm(
 		return groupTerm(term, in, rows), nil
 
 	case mentionsEBITDA(line):
-		return ebitdaTerm(term, in, rows)
+		return ebitdaTerm(spec, term, in, rows)
 
 	case term.Kind == domain.TermStatementNote:
 		return noteTerm(term, in, rows)
@@ -243,17 +243,60 @@ func declaredRelated(in *Inputs) int {
 	return n
 }
 
-func ebitdaTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
+func ebitdaTerm(spec *domain.CovenantSpec, term domain.Term, in *Inputs, rows []row) (termResult, error) {
 	revenue := categoryTerm(domain.Term{Name: "revenue"}, rows, domain.CatRevenue, false)
 	opex := categoryTerm(domain.Term{Name: "opex"}, rows, domain.CatOperatingCosts, false)
 	applyReclassification(&opex, domain.Term{Name: "opex"}, in, domain.CatOperatingCosts)
 
-	res := termResult{Name: term.Name, Value: revenue.Value.Sub(opex.Value)}
+	raw := revenue.Value.Sub(opex.Value)
+	res := termResult{Name: term.Name, Value: raw}
 	res.Unmeasurable = revenue.Unmeasurable || opex.Unmeasurable
 	res.Contributors = slices.Concat(revenue.Contributors, opex.Contributors)
 	res.Trace = fmt.Sprintf("%s = revenue %s - operating costs %s = %s",
-		term.Name, revenue.Value.StringFixed(2), opex.Value.StringFixed(2), res.Value.StringFixed(2))
+		term.Name, revenue.Value.StringFixed(2), opex.Value.StringFixed(2), raw.StringFixed(2))
+
+	if termClaimsAddBacks(spec, term.Name) {
+		return res, nil
+	}
+	added, parts := addBacks(in, rows)
+	if len(parts) == 0 {
+		return res, nil
+	}
+	res.Value = raw.Add(added)
+	res.Trace += fmt.Sprintf("; + %s added back by the auditor = %s",
+		strings.Join(parts, ", "), res.Value.StringFixed(2))
 	return res, nil
+}
+
+func addBacks(in *Inputs, rows []row) (decimal.Decimal, []string) {
+	sum := decimal.Zero
+	if in.Facts == nil {
+		return sum, nil
+	}
+	var parts []string
+	for _, a := range in.Facts.Adjustments {
+		if !a.Applied || a.Kind != domain.AdjEBITDAAddBack || !deductedInOperatingCosts(a, rows) {
+			continue
+		}
+		sum = sum.Add(a.Amount.Abs())
+		parts = append(parts, fmt.Sprintf("%s %s", a.Kind, a.Amount.Abs().StringFixed(2)))
+	}
+	return sum, parts
+}
+
+func termClaimsAddBacks(spec *domain.CovenantSpec, self string) bool {
+	if spec == nil {
+		return false
+	}
+	for _, t := range spec.Terms {
+		if t.Name == self || t.Kind != domain.TermStatementNote {
+			continue
+		}
+		if mentionsOneOff(strings.ToLower(t.Line + " " + t.Description)) {
+			return true
+		}
+	}
+	return false
 }
 
 func noteTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
@@ -261,26 +304,16 @@ func noteTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 	if in.Facts == nil {
 		return res, nil
 	}
-	oneOff := mentionsOneOff(strings.ToLower(term.Line + " " + term.Description))
-
-	sum := decimal.Zero
-	var parts []string
-	for _, a := range in.Facts.Adjustments {
-		if !a.Applied {
-			continue
-		}
-		switch {
-		case oneOff && a.Kind == domain.AdjEBITDAAddBack:
-
-			if !deductedInOperatingCosts(a, rows) {
+	sum, parts := addBacks(in, rows)
+	if !mentionsOneOff(strings.ToLower(term.Line + " " + term.Description)) {
+		sum, parts = decimal.Zero, nil
+		for _, a := range in.Facts.Adjustments {
+			if !a.Applied || a.Kind != domain.AdjDisclosedAmount {
 				continue
 			}
-		case !oneOff && a.Kind == domain.AdjDisclosedAmount:
-		default:
-			continue
+			sum = sum.Add(a.Amount.Abs())
+			parts = append(parts, fmt.Sprintf("%s %s", a.Kind, a.Amount.Abs().StringFixed(2)))
 		}
-		sum = sum.Add(a.Amount.Abs())
-		parts = append(parts, fmt.Sprintf("%s %s", a.Kind, a.Amount.Abs().StringFixed(2)))
 	}
 	res.Value = sum
 	res.Trace = fmt.Sprintf("%s = %s from the notes (%s)",
