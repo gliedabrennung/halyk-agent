@@ -349,7 +349,7 @@ func (r *Report) String() string {
 	fmt.Fprintf(&b, "  accounts          %d\n", r.AccountCount)
 	fmt.Fprintf(&b, "  counterparties    %d distinct\n", r.Counterparties)
 	fmt.Fprintf(&b, "  dates             %s .. %s\n", r.DateFrom.Format("2006-01-02"), r.DateTo.Format("2006-01-02"))
-	fmt.Fprintf(&b, "  currencies        %s\n", formatCurrencies(r.Currencies))
+	fmt.Fprintf(&b, "  currencies        %s\n", domain.JoinPairs(r.Currencies))
 	if len(r.MissingAmounts) > 0 {
 		fmt.Fprintf(&b, "  BLANK AMOUNTS     %d: %s  (must be recovered from documents)\n",
 			len(r.MissingAmounts), strings.Join(r.MissingAmounts, " "))
@@ -401,13 +401,4 @@ func (r *Report) String() string {
 	}
 	fmt.Fprintf(&b, "%s\n", line)
 	return b.String()
-}
-
-func formatCurrencies(m map[string]int) string {
-	keys := domain.SortedKeys(m)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%d", k, m[k]))
-	}
-	return strings.Join(parts, " ")
 }

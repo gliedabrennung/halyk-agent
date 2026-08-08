@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/agents"
@@ -52,7 +52,7 @@ func buildInput(
 			}
 		}
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].DocID < candidates[j].DocID })
+	slices.SortFunc(candidates, func(a, b index.Entry) int { return strings.Compare(a.DocID, b.DocID) })
 
 	if docID := idx.GroupParents[scenarioID]; docID != "" {
 		text, err := opts.Store.DocText(docID)

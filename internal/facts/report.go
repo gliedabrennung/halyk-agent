@@ -54,16 +54,8 @@ func summarise(fb *domain.FactBase, docs, ocrPages int) Row {
 		}
 		kinds[a.Kind]++
 	}
-	var parts []string
-	for _, k := range domain.SortedKeys(kinds) {
-		parts = append(parts, fmt.Sprintf("%s=%d", k, kinds[k]))
-	}
-	row.Kinds = strings.Join(parts, " ")
-	var fx []string
-	for _, c := range domain.SortedKeys(fb.FXRates) {
-		fx = append(fx, fmt.Sprintf("%s=%s", c, fb.FXRates[c]))
-	}
-	row.FX = strings.Join(fx, " ")
+	row.Kinds = domain.JoinPairs(kinds)
+	row.FX = domain.JoinPairs(fb.FXRates)
 	if row.FX == "" {
 		row.FX = "—"
 	}

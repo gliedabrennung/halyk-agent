@@ -2,12 +2,11 @@ package facts
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -110,11 +109,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		}
 
 		if opts.Namespace == "" {
-			b, err := json.MarshalIndent(fb, "", "  ")
-			if err != nil {
-				return nil, err
-			}
-			if err := os.WriteFile(filepath.Join(dir, fb.ScenarioID+".json"), b, 0o644); err != nil {
+			if err := store.WriteJSON(filepath.Join(dir, fb.ScenarioID+".json"), fb); err != nil {
 				return nil, err
 			}
 		}
@@ -133,6 +128,6 @@ func missingAmountTxns(txns []domain.Txn, scenarioID string) []string {
 			out = append(out, t.ID)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
