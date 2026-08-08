@@ -142,12 +142,24 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 func onePass(ctx context.Context, opts Options, ns string) (map[string]answer, error) {
 	client := llm.NewWithNonce(opts.Cfg, opts.Store, opts.Log, ns)
 
+	// Стадии переживают исчерпание квоты, деградируя, но для пробы стабильности неполный
+	// проход бессмысленен: сравнивать с базовым прогоном можно только целую стадию.
+	quota := func(stage string) error {
+		if err := client.QuotaExhausted(); err != nil {
+			return fmt.Errorf("%s: %w", stage, err)
+		}
+		return nil
+	}
+
 	cov, err := covenants.Run(ctx, covenants.Options{
 		Cfg: opts.Cfg, Store: opts.Store, Log: opts.Log, Client: client,
 		Only: opts.Only, Namespace: ns,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("covenants: %w", err)
+	}
+	if err := quota("covenants"); err != nil {
+		return nil, err
 	}
 	if !cov.OK() {
 		return nil, fmt.Errorf("covenants: %s", strings.Join(cov.Failed, "; "))
@@ -159,6 +171,9 @@ func onePass(ctx context.Context, opts Options, ns string) (map[string]answer, e
 	if err != nil {
 		return nil, fmt.Errorf("facts: %w", err)
 	}
+	if err := quota("facts"); err != nil {
+		return nil, err
+	}
 	if !fb.OK() {
 		return nil, fmt.Errorf("facts: %s", strings.Join(fb.Failed, "; "))
 	}
@@ -167,6 +182,9 @@ func onePass(ctx context.Context, opts Options, ns string) (map[string]answer, e
 		Only: opts.Only, Namespace: ns, FactsNamespace: ns,
 	}); err != nil {
 		return nil, fmt.Errorf("classify: %w", err)
+	}
+	if err := quota("classify"); err != nil {
+		return nil, err
 	}
 
 	rep, err := evaluate.Run(ctx, evaluate.Options{

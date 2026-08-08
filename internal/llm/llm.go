@@ -39,7 +39,35 @@ type shared struct {
 	nextSlot    time.Time
 	minInterval time.Duration
 
+	// Суточная квота кончилась: сеть больше не трогаем, кэш продолжаем отдавать.
+	quotaMu  sync.Mutex
+	quotaErr error
+
 	http *http.Client
+}
+
+// quotaSpent возвращает причину, по которой сетевые вызовы закрыты, или nil.
+func (s *shared) quotaSpent() error {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	return s.quotaErr
+}
+
+func (s *shared) spendQuota(err error) {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	if s.quotaErr == nil {
+		s.quotaErr = err
+	}
+}
+
+// QuotaExhausted говорит, упёрся ли этот клиент в суточную квоту провайдера. Стадия может
+// на этом остановиться вместо того, чтобы получать одну и ту же ошибку на каждом элементе.
+func (c *Client) QuotaExhausted() error {
+	if err := c.shared.quotaSpent(); err != nil {
+		return fmt.Errorf("the model's daily quota is exhausted: %w", err)
+	}
+	return nil
 }
 
 func NewWithNonce(cfg *config.Config, st *store.Store, log *slog.Logger, nonce string) *Client {
@@ -232,6 +260,11 @@ func (c *Client) Complete(ctx context.Context, req Request) (string, error) {
 	if err := c.cfg.RequireAPIKey(); err != nil {
 		return "", err
 	}
+	// Квота кончилась ещё на прошлом вызове — в сеть не идём, отдаём ту же ошибку сразу.
+	// Проверка стоит после кэша: закэшированное отвечается и с исчерпанной квотой.
+	if err := c.QuotaExhausted(); err != nil {
+		return "", fmt.Errorf("llm call %s (%s): %w", req.Name, modelName, err)
+	}
 
 	select {
 	case c.shared.sem <- struct{}{}:
@@ -270,6 +303,11 @@ func (c *Client) Complete(ctx context.Context, req Request) (string, error) {
 		}
 
 		if !retryable || attempt > maxRetries {
+			if IsQuotaExhausted(err) {
+				c.shared.spendQuota(err)
+				c.log.Error("daily quota exhausted; the remaining calls of this run are skipped",
+					"agent", req.Name, "model", modelName)
+			}
 			return "", fmt.Errorf("llm call %s (%s): %w", req.Name, modelName, err)
 		}
 		c.backoff(delay)
