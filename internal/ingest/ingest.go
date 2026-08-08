@@ -1,11 +1,12 @@
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -183,10 +184,7 @@ func summariseLedger(rep *Report, led *domain.Ledger, tpl *domain.Template) {
 			}
 		}
 		sum.Counterparties = len(cps)
-		for c := range curr {
-			sum.Currencies = append(sum.Currencies, c)
-		}
-		sort.Strings(sum.Currencies)
+		sum.Currencies = domain.SortedKeys(curr)
 
 		if sum.InTemplate {
 			rep.PerScenario = append(rep.PerScenario, sum)
@@ -200,8 +198,8 @@ func summariseLedger(rep *Report, led *domain.Ledger, tpl *domain.Template) {
 	for i, s := range tpl.Scenarios {
 		order[s] = i
 	}
-	sort.SliceStable(rep.PerScenario, func(i, j int) bool {
-		return order[rep.PerScenario[i].ScenarioID] < order[rep.PerScenario[j].ScenarioID]
+	slices.SortStableFunc(rep.PerScenario, func(a, b ScenarioSummary) int {
+		return cmp.Compare(order[a.ScenarioID], order[b.ScenarioID])
 	})
 
 	for _, s := range tpl.Scenarios {
@@ -230,12 +228,8 @@ func extractDocuments(ctx context.Context, opts Options, rep *Report) error {
 		return fmt.Errorf("no documents found in %s", opts.Cfg.DocumentsDir())
 	}
 
-	workers := runtime.NumCPU()
-	if workers > 8 {
-		workers = 8
-	}
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(workers)
+	g.SetLimit(min(runtime.NumCPU(), 8))
 
 	var mu sync.Mutex
 	var needsOCR []string
@@ -322,11 +316,11 @@ func extractDocuments(ctx context.Context, opts Options, rep *Report) error {
 	for _, d := range docs {
 		pages += d.Pages
 		chars += d.Chars
-		if d.NeedsOCR && !d.OCRUsed && !contains(needsOCR, d.ID) {
+		if d.NeedsOCR && !d.OCRUsed && !slices.Contains(needsOCR, d.ID) {
 			needsOCR = append(needsOCR, d.ID)
 		}
 	}
-	sort.Strings(needsOCR)
+	slices.Sort(needsOCR)
 
 	rep.DocExtracted, rep.DocCached = extracted, cached
 	rep.PageCount, rep.CharCount = pages, chars

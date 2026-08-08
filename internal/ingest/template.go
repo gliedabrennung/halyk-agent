@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 
 	"github.com/gliedabrennung/halyk-agent/internal/config"
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
@@ -113,11 +113,11 @@ func checkCellShape(scenario, clause string, cell map[string]json.RawMessage) er
 	if len(cell) != len(_cellFields) {
 		extra := make([]string, 0, len(cell))
 		for k := range cell {
-			if !contains(_cellFields, k) {
+			if !slices.Contains(_cellFields, k) {
 				extra = append(extra, k)
 			}
 		}
-		sort.Strings(extra)
+		slices.Sort(extra)
 		return fmt.Errorf("answers.%s.%s has unexpected fields %v", scenario, clause, extra)
 	}
 	return nil
@@ -145,15 +145,6 @@ func readKey(dec *json.Decoder) (string, error) {
 		return "", fmt.Errorf("expected object key, got %v", tok)
 	}
 	return s, nil
-}
-
-func contains(hay []string, needle string) bool {
-	for _, h := range hay {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func LoadTemplateAndTxns(cfg *config.Config, st *store.Store) (*domain.Template, []domain.Txn, error) {
