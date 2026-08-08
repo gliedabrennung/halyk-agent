@@ -2,6 +2,7 @@ package index
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
@@ -93,16 +94,15 @@ func ScanText(text string) Scan {
 }
 
 func (s Scan) HasClauses(clauses []string) bool {
-	present := make(map[string]bool)
-	for _, c := range s.ClauseNumbers {
-		present[c] = true
+	if len(clauses) == 0 {
+		return false
 	}
 	for _, c := range clauses {
-		if !present[c] {
+		if !slices.Contains(s.ClauseNumbers, c) {
 			return false
 		}
 	}
-	return len(clauses) > 0
+	return true
 }
 
 func (s Scan) CoversYear(year string) bool {

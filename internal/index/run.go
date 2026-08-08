@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -36,18 +36,17 @@ type Options struct {
 }
 
 type Report struct {
-	Duration    time.Duration          `json:"duration"`
-	Documents   int                    `json:"documents"`
-	ByType      map[string]int         `json:"by_type"`
-	ByResolver  map[string]int         `json:"by_resolver"`
-	Resolved    int                    `json:"resolved"`
-	Unresolved  []string               `json:"unresolved,omitempty"`
-	Superseded  []string               `json:"superseded,omitempty"`
-	PerScenario []ScenarioDocs         `json:"per_scenario"`
-	LowConf     []string               `json:"low_confidence,omitempty"`
-	Coverage    string                 `json:"coverage_error,omitempty"`
-	IndexPath   string                 `json:"index_path"`
-	Counts      map[string]interface{} `json:"-"`
+	Duration    time.Duration  `json:"duration"`
+	Documents   int            `json:"documents"`
+	ByType      map[string]int `json:"by_type"`
+	ByResolver  map[string]int `json:"by_resolver"`
+	Resolved    int            `json:"resolved"`
+	Unresolved  []string       `json:"unresolved,omitempty"`
+	Superseded  []string       `json:"superseded,omitempty"`
+	PerScenario []ScenarioDocs `json:"per_scenario"`
+	LowConf     []string       `json:"low_confidence,omitempty"`
+	Coverage    string         `json:"coverage_error,omitempty"`
+	IndexPath   string         `json:"index_path"`
 }
 
 type ScenarioDocs struct {
@@ -81,13 +80,9 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("no documents in the store; run `halyk-agent ingest` first")
 	}
 	if len(opts.Only) > 0 {
-		want := make(map[string]bool, len(opts.Only))
-		for _, d := range opts.Only {
-			want[d] = true
-		}
 		var filtered []domain.Document
 		for _, d := range docs {
-			if want[d.ID] {
+			if slices.Contains(opts.Only, d.ID) {
 				filtered = append(filtered, d)
 			}
 		}
@@ -189,10 +184,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 
 func ocrPages(ctx context.Context, doc domain.Document, cacheDir string) (string, int, error) {
 	const maxTriageOCRPages = 4
-	n := doc.Pages
-	if n > maxTriageOCRPages {
-		n = maxTriageOCRPages
-	}
+	n := min(doc.Pages, maxTriageOCRPages)
 	var b strings.Builder
 	for p := 1; p <= n; p++ {
 		text, err := ingest.OCRPage(ctx, doc.Path, p, cacheDir)
@@ -262,8 +254,8 @@ func buildReport(idx *Index, scenarios []string) *Report {
 			rep.LowConf = append(rep.LowConf, fmt.Sprintf("%s(%.2f,%s)", e.DocID, e.Meta.Confidence, e.DocType))
 		}
 	}
-	sort.Strings(rep.Unresolved)
-	sort.Strings(rep.Superseded)
+	slices.Sort(rep.Unresolved)
+	slices.Sort(rep.Superseded)
 
 	for _, scn := range scenarios {
 		sd := ScenarioDocs{ScenarioID: scn}

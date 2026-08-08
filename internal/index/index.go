@@ -2,7 +2,7 @@ package index
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/agents"
@@ -72,7 +72,7 @@ func Resolve(entries []Entry, led *domain.Ledger, templateScenarios []string, co
 				}
 			}
 		default:
-			sort.Strings(scenarios)
+			slices.Sort(scenarios)
 			e.ResolvedBy = Unresolved
 			e.Notes = append(e.Notes, "mentions several borrower accounts: "+strings.Join(scenarios, ", "))
 		}
@@ -151,7 +151,7 @@ func Resolve(entries []Entry, led *domain.Ledger, templateScenarios []string, co
 	}
 
 	idx.Entries = entries
-	sort.Slice(idx.Entries, func(i, j int) bool { return idx.Entries[i].DocID < idx.Entries[j].DocID })
+	slices.SortFunc(idx.Entries, func(a, b Entry) int { return strings.Compare(a.DocID, b.DocID) })
 	for _, e := range idx.Entries {
 		if e.ScenarioID != "" {
 			idx.ByScenario[e.ScenarioID] = append(idx.ByScenario[e.ScenarioID], e.DocID)
@@ -209,12 +209,7 @@ var _consolidationMarkers = []string{"consolidated", "консолидир"}
 
 func mentionsConsolidation(body string) bool {
 	lower := strings.ToLower(body)
-	for _, m := range _consolidationMarkers {
-		if strings.Contains(lower, m) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(_consolidationMarkers, func(m string) bool { return strings.Contains(lower, m) })
 }
 
 func governsByPeriod(t domain.DocType) bool {
@@ -232,16 +227,12 @@ func (idx *Index) CreditAgreements(scenarioID string) []Entry {
 }
 
 func (idx *Index) DocsFor(scenarioID string, types ...domain.DocType) []Entry {
-	want := make(map[domain.DocType]bool, len(types))
-	for _, t := range types {
-		want[t] = true
-	}
 	var out []Entry
 	for _, e := range idx.Entries {
 		if e.ScenarioID != scenarioID || !e.Effective {
 			continue
 		}
-		if len(want) == 0 || want[e.DocType] {
+		if len(types) == 0 || slices.Contains(types, e.DocType) {
 			out = append(out, e)
 		}
 	}
@@ -258,13 +249,7 @@ func (idx *Index) CheckCoverage(templateScenarios []string, clauses map[string][
 			continue
 		}
 		if want := clauses[scn]; len(want) > 0 {
-			covered := false
-			for _, a := range agreements {
-				if a.Scan.HasClauses(want) {
-					covered = true
-					break
-				}
-			}
+			covered := slices.ContainsFunc(agreements, func(a Entry) bool { return a.Scan.HasClauses(want) })
 			if !covered {
 				problems = append(problems, fmt.Sprintf(
 					"%s: no effective credit agreement contains all requested clauses %s",
@@ -290,12 +275,8 @@ func normaliseCompany(name string) string {
 	}
 	s = strings.Map(func(r rune) rune {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r >= 'а' && r <= 'я', r == 'ё':
 			return r
-		case r >= 'а' && r <= 'я', r == 'ё':
-			return r
-		case r == ' ':
-			return ' '
 		}
 		return ' '
 	}, s)
@@ -303,10 +284,8 @@ func normaliseCompany(name string) string {
 }
 
 func appendUnique(list []string, v string) []string {
-	for _, x := range list {
-		if x == v {
-			return list
-		}
+	if slices.Contains(list, v) {
+		return list
 	}
 	return append(list, v)
 }
