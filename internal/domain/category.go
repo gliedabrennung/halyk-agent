@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -44,14 +45,7 @@ var Categories = []Category{
 	CatOtherOperating, CatOtherIncome, CatUnknown,
 }
 
-func ValidCategory(c Category) bool {
-	for _, k := range Categories {
-		if k == c {
-			return true
-		}
-	}
-	return false
-}
+func ValidCategory(c Category) bool { return slices.Contains(Categories, c) }
 
 var _operatingCategories = map[Category]bool{
 	CatMarketing:           true,

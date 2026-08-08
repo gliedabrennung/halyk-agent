@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -40,29 +40,25 @@ func NewLedger(txns []Txn) *Ledger {
 		AccountToScn: map[string]string{},
 		ScnToAccount: map[string][]string{},
 	}
-	seen := map[string]map[string]bool{}
+	// Один счёт может встретиться у нескольких сценариев; храним их без повторов.
+	scnsOf := map[string][]string{}
 	for i := range led.Txns {
 		t := &led.Txns[i]
 		led.ByID[t.ID] = t
 		led.ByScenario[t.ScenarioID] = append(led.ByScenario[t.ScenarioID], t)
-		if seen[t.AccountID] == nil {
-			seen[t.AccountID] = map[string]bool{}
+		if !slices.Contains(scnsOf[t.AccountID], t.ScenarioID) {
+			scnsOf[t.AccountID] = append(scnsOf[t.AccountID], t.ScenarioID)
 		}
-		seen[t.AccountID][t.ScenarioID] = true
 	}
-	for acc, scns := range seen {
-		names := make([]string, 0, len(scns))
-		for s := range scns {
-			names = append(names, s)
-		}
-		sort.Strings(names)
-		led.AccountToScn[acc] = names[0]
-		for _, s := range names {
+	for acc, scns := range scnsOf {
+		slices.Sort(scns)
+		led.AccountToScn[acc] = scns[0]
+		for _, s := range scns {
 			led.ScnToAccount[s] = append(led.ScnToAccount[s], acc)
 		}
 	}
 	for s := range led.ScnToAccount {
-		sort.Strings(led.ScnToAccount[s])
+		slices.Sort(led.ScnToAccount[s])
 	}
 	return led
 }
