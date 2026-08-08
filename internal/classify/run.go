@@ -446,28 +446,36 @@ func markAdjustments(
 
 	var warnings []string
 	for _, adj := range fb.Adjustments {
+		if adj.TxnID == "" && adj.Counterparty == "" && !adj.Amount.IsPositive() {
+			continue
+		}
+		// Три ключа по убыванию точности и по возрастанию надёжности. txn_id точнее всего,
+		// но его легко выдумать; имя контрагента приходит из текстового слоя документа и
+		// бывает искажено; сумма — цифра, которую и модель, и документ обычно передают верно.
 		idx := -1
-		// Названный моделью txn_id — самый точный ключ, но и самый ненадёжный: его легко
-		// выдумать. Не нашли — не выбрасываем корректировку, а ищем строку по контрагенту.
 		if adj.TxnID != "" {
 			if i, ok := byID[adj.TxnID]; ok {
 				idx = i
 			} else {
 				warnings = append(warnings, fmt.Sprintf(
-					"%s: adjustment names %s, which is not a row of this borrower; matching by counterparty instead",
+					"%s: adjustment names %s, which is not a row of this borrower; matching by counterparty and amount instead",
 					scenarioID, adj.TxnID))
 			}
 		}
 		if idx < 0 && adj.Counterparty != "" {
-			candidates := byEntity[domain.EntityKey(adj.Counterparty)]
-			idx = rowForCounterparty(adj, set, candidates, amountOf)
-			if idx < 0 {
-				warnings = append(warnings, fmt.Sprintf("%s: adjustment for %q (%s) matches %d rows; left unmarked",
-					scenarioID, adj.Counterparty, adj.Amount, len(candidates)))
-				continue
+			idx = rowForCounterparty(adj, set, byEntity[domain.EntityKey(adj.Counterparty)], amountOf)
+		}
+		if idx < 0 && adj.Amount.IsPositive() {
+			if i := rowForAmount(adj, set, amountOf); i >= 0 {
+				idx = i
+				warnings = append(warnings, fmt.Sprintf(
+					"%s: no row is booked to %q, but %s carries its amount %s; matched on the amount",
+					scenarioID, adj.Counterparty, set.Txns[i].TxnID, adj.Amount))
 			}
 		}
 		if idx < 0 {
+			warnings = append(warnings, fmt.Sprintf("%s: adjustment for %q (%s) matches no row; left unmarked",
+				scenarioID, adj.Counterparty, adj.Amount))
 			continue
 		}
 
@@ -484,6 +492,22 @@ func markAdjustments(
 		}
 	}
 	return warnings
+}
+
+// rowForAmount ищет единственную строку с такой же абсолютной суммой. Последняя попытка:
+// имя в документе может быть искажено, а цифра — нет. Двусмысленность отсекается.
+func rowForAmount(adj domain.Adjustment, set *domain.LabelSet, amountOf map[string]decimal.Decimal) int {
+	hit := -1
+	for i, tl := range set.Txns {
+		if !amountOf[tl.TxnID].Abs().Equal(adj.Amount.Abs()) {
+			continue
+		}
+		if hit >= 0 {
+			return -1
+		}
+		hit = i
+	}
+	return hit
 }
 
 // rowForCounterparty находит единственную строку контрагента; когда их несколько, различает

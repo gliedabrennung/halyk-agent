@@ -288,3 +288,70 @@ func TestAssembleLeavesAnInventedTxnIDUnmarkedWhenNothingElseMatches(t *testing.
 		}
 	}
 }
+
+// Текстовый слой документа исказил имя контрагента (реальный случай: P4, «ПеК Restoration
+// Works LLP» вместо «Ilek Restoration Works LLP»). Сумма при этом цела и уникальна.
+func TestAssembleMatchesOnAmountWhenTheNameIsCorrupted(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{
+				Kind:         domain.AdjEBITDAAddBack,
+				Counterparty: "ПеК Restoration Works LLP",
+				Amount:       dec("481247.63"),
+				Applied:      true,
+			},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0025", "Ilek Restoration Works LLP", "Flood remediation and silo repair works", "-481247.63"),
+		txn("TXN-P1-0026", "Someone Else LLP", "Office rent — north wing", "-1000"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "flood remediation and silo repair works", Category: domain.CatOperatingCosts, Source: "rule"},
+		domain.Label{Pattern: "office rent", Category: domain.CatRent, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the amount match must be reported once, got %v", warnings)
+	}
+
+	marked, _ := set.Lookup("TXN-P1-0025")
+	if marked.AdjustmentKind != domain.AdjEBITDAAddBack {
+		t.Errorf("adjustment kind = %q, want %q", marked.AdjustmentKind, domain.AdjEBITDAAddBack)
+	}
+	other, _ := set.Lookup("TXN-P1-0026")
+	if other.AdjustmentKind != "" {
+		t.Error("only the row carrying the amount may be marked")
+	}
+}
+
+// Та же сумма у двух строк — опознать нечем, лучше не пометить ничего.
+func TestAssembleWillNotGuessBetweenTwoRowsOfTheSameAmount(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{Kind: domain.AdjEBITDAAddBack, Counterparty: "Garbled Name LLP", Amount: dec("1000"), Applied: true},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0004", "Acme LLP", "Office rent — north wing", "-1000"),
+		txn("TXN-P1-0005", "Beta LLP", "Office rent — south wing", "-1000"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "office rent", Category: domain.CatRent, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the failure must be reported, got %v", warnings)
+	}
+	for _, tl := range set.Txns {
+		if tl.AdjustmentKind != "" {
+			t.Errorf("%s was marked on an ambiguous amount", tl.TxnID)
+		}
+	}
+}
