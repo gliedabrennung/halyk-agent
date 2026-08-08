@@ -55,6 +55,7 @@ type Report struct {
 
 	Rows     []Row    `json:"rows"`
 	Warnings []string `json:"warnings,omitempty"`
+	Failed   []string `json:"failed,omitempty"`
 	Path     string   `json:"path"`
 }
 
@@ -226,7 +227,20 @@ func labelPatterns(
 		g.Go(func() error {
 			out, err := agents.ClassifyPatterns(gctx, opts.Client, opts.Cfg.Model, items[lo:hi])
 			if err != nil {
-				return fmt.Errorf("patterns %d-%d: %w", lo, hi-1, err)
+				if gctx.Err() != nil {
+					return gctx.Err()
+				}
+				// Батч теряем, но не всю классификацию: эти шаблоны размечает keyword-правило,
+				// а то, что правило не покрывает, останется unknown и попадёт в отчёт.
+				opts.Log.Error("pattern batch failed; falling back to the keyword rules",
+					"from", lo, "to", hi-1, "err", err)
+				mu.Lock()
+				for i := lo; i < hi; i++ {
+					results[i] = agents.ClassifyResult{Category: domain.CatUnknown}
+				}
+				rep.Failed = append(rep.Failed, fmt.Sprintf("patterns %d-%d: %v", lo, hi-1, err))
+				mu.Unlock()
+				return nil
 			}
 			mu.Lock()
 			copy(results[lo:hi], out)
@@ -275,7 +289,15 @@ func labelPatterns(
 		hi := min(lo+escalationBatch, len(disputes))
 		out, err := agents.ResolveDisputes(ctx, opts.Client, opts.Cfg.Model, disputes[lo:hi])
 		if err != nil {
-			return nil, err
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			// Эскалация — уточнение, а не источник разметки: без неё остаётся ответ быстрой
+			// модели, а где его нет — правило.
+			opts.Log.Error("escalation batch failed; keeping the fast model's answer",
+				"from", lo, "to", hi-1, "err", err)
+			rep.Failed = append(rep.Failed, fmt.Sprintf("escalation %d-%d: %v", lo, hi-1, err))
+			continue
 		}
 		rep.Calls++
 		for k, r := range out {
@@ -526,6 +548,12 @@ func (r *Report) String() string {
 			row.ScenarioID, row.Txns, row.Related, row.Adjusted, row.Unknown, row.Top)
 	}
 	fmt.Fprintf(&b, "%s\n", line)
+	if len(r.Failed) > 0 {
+		fmt.Fprintf(&b, "  DEGRADED %d batches, keyword rules used instead:\n", len(r.Failed))
+		for _, f := range r.Failed {
+			fmt.Fprintf(&b, "    %s\n", f)
+		}
+	}
 	if len(r.Warnings) > 0 {
 		fmt.Fprintf(&b, "  WARNINGS:\n")
 		for _, w := range r.Warnings {
