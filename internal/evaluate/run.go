@@ -94,6 +94,13 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Спеки из стора могут быть старше полей, которые читает движок.
+		for _, spec := range specs {
+			for _, note := range covenants.Normalise(spec) {
+				opts.Log.Warn("specification normalised on load",
+					"scenario", scn, "clause", spec.ClauseID, "note", note)
+			}
+		}
 		fb, err := store.RequireArtifact[domain.FactBase](
 			opts.Store, facts.ArtifactKind+opts.Namespace, scn, "fact base", "facts")
 		if err != nil {
@@ -219,28 +226,46 @@ func criticNote(r review) string {
 	return "disputed:" + r.issue
 }
 
+// normaliseFX приводит суммы к долларам. Курс, раскрытый в документах самого заёмщика,
+// идёт первым; общий на весь корпус курс из config/fx.yaml — только вторым и с записью в
+// журнал: это константа, вынутая из одного документа, и в отчёте о прогоне она должна быть
+// видна, а не применяться молча.
 func normaliseFX(txns []domain.Txn, fb *domain.FactBase, fallback map[string]decimal.Decimal, log *slog.Logger) []domain.Txn {
+	warned := make(map[string]bool)
+	rateFor := func(cur string, txnID string) (decimal.Decimal, bool) {
+		if fb != nil {
+			if rate, ok := fb.FXRates[cur]; ok && rate.IsPositive() {
+				return rate, true
+			}
+		}
+		if rate, ok := fallback[cur]; ok && rate.IsPositive() {
+			if !warned[cur] {
+				warned[cur] = true
+				log.Warn("this borrower discloses no rate; converting at the corpus-wide fallback",
+					"currency", cur, "rate", rate.String(), "source", "config/fx.yaml", "first_txn", txnID)
+			}
+			return rate, true
+		}
+		if !warned[cur] {
+			warned[cur] = true
+			log.Warn("no exchange rate anywhere; treating the amount as USD",
+				"currency", cur, "first_txn", txnID)
+		}
+		return decimal.Zero, false
+	}
+
 	out := make([]domain.Txn, 0, len(txns))
 	for _, t := range txns {
 		cur := strings.ToUpper(strings.TrimSpace(t.Currency))
-		switch {
-		case cur == "" || cur == "USD":
+		switch cur {
+		case "", domain.UnitUSD:
 			t.AmountUSD = t.Amount
 		default:
-			rate, ok := decimal.Zero, false
-			if fb != nil {
-				rate, ok = fb.FXRates[cur]
-			}
-			if !ok || !rate.IsPositive() {
-				rate, ok = fallback[cur]
-			}
-			if !ok || !rate.IsPositive() {
-
-				log.Warn("no exchange rate; treating the amount as USD", "txn", t.ID, "currency", cur)
+			if rate, ok := rateFor(cur, t.ID); ok {
+				t.AmountUSD = t.Amount.Mul(rate)
+			} else {
 				t.AmountUSD = t.Amount
-				break
 			}
-			t.AmountUSD = t.Amount.Mul(rate)
 		}
 		out = append(out, t)
 	}
