@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,17 +72,18 @@ func (c *Client) WithLogger(log *slog.Logger) *Client {
 }
 
 func (c *Client) reserve(ctx context.Context) error {
-	if c.shared.minInterval <= 0 {
+	s := c.shared
+	if s.minInterval <= 0 {
 		return nil
 	}
-	c.shared.rateMu.Lock()
+	s.rateMu.Lock()
 	now := time.Now()
-	if c.shared.nextSlot.Before(now) {
-		c.shared.nextSlot = now
+	if s.nextSlot.Before(now) {
+		s.nextSlot = now
 	}
-	wait := c.shared.nextSlot.Sub(now)
-	c.shared.nextSlot = c.shared.nextSlot.Add(c.shared.minInterval)
-	c.shared.rateMu.Unlock()
+	wait := s.nextSlot.Sub(now)
+	s.nextSlot = s.nextSlot.Add(s.minInterval)
+	s.rateMu.Unlock()
 
 	if wait <= 0 {
 		return nil
@@ -97,11 +99,11 @@ func (c *Client) reserve(ctx context.Context) error {
 }
 
 func (c *Client) backoff(d time.Duration) {
-	c.shared.rateMu.Lock()
-	defer c.shared.rateMu.Unlock()
-	until := time.Now().Add(d)
-	if c.shared.nextSlot.Before(until) {
-		c.shared.nextSlot = until
+	s := c.shared
+	s.rateMu.Lock()
+	defer s.rateMu.Unlock()
+	if until := time.Now().Add(d); s.nextSlot.Before(until) {
+		s.nextSlot = until
 	}
 }
 
@@ -140,12 +142,7 @@ func IsQuotaExhausted(err error) bool {
 		return true
 	}
 	msg := strings.ToLower(apiErr.Message)
-	for _, w := range _exhaustedWindows {
-		if strings.Contains(msg, w) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(_exhaustedWindows, func(w string) bool { return strings.Contains(msg, w) })
 }
 
 func isRetryable(err error, attempt int) (time.Duration, bool) {
