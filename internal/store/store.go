@@ -326,6 +326,20 @@ func (s *Store) GetArtifact(kind, id string, v any) (bool, error) {
 	return true, nil
 }
 
+// RequireArtifact читает артефакт стадии. Если его нет, ошибка называет, чего не хватает
+// и какую стадию нужно прогнать: `<id> has no <what>; run ` + "`halyk-agent <stage>`" + ` first`.
+func RequireArtifact[T any](s *Store, kind, id, what, stage string) (T, error) {
+	var v T
+	ok, err := s.GetArtifact(kind, id, &v)
+	if err != nil {
+		return v, err
+	}
+	if !ok {
+		return v, fmt.Errorf("%s has no %s; run `halyk-agent %s` first", id, what, stage)
+	}
+	return v, nil
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

@@ -3,7 +3,7 @@ package evaluate
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -168,15 +168,12 @@ func contributorRows(c cell) []string {
 			picked = append(picked, t)
 		}
 	}
-	sort.Slice(picked, func(i, j int) bool {
-		return picked[i].AmountUSD.Abs().GreaterThan(picked[j].AmountUSD.Abs())
+	slices.SortFunc(picked, func(a, b domain.Txn) int {
+		return b.AmountUSD.Abs().Cmp(a.AmountUSD.Abs())
 	})
-	if len(picked) > maxCriticRows {
-		picked = picked[:maxCriticRows]
-	}
 
 	var out []string
-	for _, t := range picked {
+	for _, t := range picked[:min(len(picked), maxCriticRows)] {
 		l := labels[t.ID]
 		flags := ""
 		if l.RelatedParty {

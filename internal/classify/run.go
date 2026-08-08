@@ -325,13 +325,10 @@ func buildLabelSet(
 	txns []*domain.Txn,
 	byPattern map[string]domain.Label,
 ) (*domain.LabelSet, []string, error) {
-	var fb domain.FactBase
-	ok, err := opts.Store.GetArtifact(facts.ArtifactKind+opts.FactsNamespace, scenarioID, &fb)
+	fb, err := store.RequireArtifact[domain.FactBase](
+		opts.Store, facts.ArtifactKind+opts.FactsNamespace, scenarioID, "fact base", "facts")
 	if err != nil {
 		return nil, nil, err
-	}
-	if !ok {
-		return nil, nil, fmt.Errorf("%s has no fact base; run `halyk-agent facts` first", scenarioID)
 	}
 	return assemble(scenarioID, &fb, txns, byPattern)
 }

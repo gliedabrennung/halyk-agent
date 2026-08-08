@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,25 +89,20 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	candidatesOf := make(map[string][]string)
 
 	for _, scn := range scenarios {
-		var specs []*domain.CovenantSpec
-		ok, err := opts.Store.GetArtifact(covenants.ArtifactKind+opts.Namespace, scn, &specs)
+		specs, err := store.RequireArtifact[[]*domain.CovenantSpec](
+			opts.Store, covenants.ArtifactKind+opts.Namespace, scn, "covenant specifications", "covenants")
 		if err != nil {
 			return nil, err
 		}
-		if !ok {
-			return nil, fmt.Errorf("%s has no covenant specifications; run `halyk-agent covenants` first", scn)
-		}
-		var fb domain.FactBase
-		if ok, err := opts.Store.GetArtifact(facts.ArtifactKind+opts.Namespace, scn, &fb); err != nil {
+		fb, err := store.RequireArtifact[domain.FactBase](
+			opts.Store, facts.ArtifactKind+opts.Namespace, scn, "fact base", "facts")
+		if err != nil {
 			return nil, err
-		} else if !ok {
-			return nil, fmt.Errorf("%s has no fact base; run `halyk-agent facts` first", scn)
 		}
-		var labels domain.LabelSet
-		if ok, err := opts.Store.GetArtifact(classify.ArtifactKind+opts.Namespace, scn, &labels); err != nil {
+		labels, err := store.RequireArtifact[domain.LabelSet](
+			opts.Store, classify.ArtifactKind+opts.Namespace, scn, "labels", "classify")
+		if err != nil {
 			return nil, err
-		} else if !ok {
-			return nil, fmt.Errorf("%s has no labels; run `halyk-agent classify` first", scn)
 		}
 
 		in := &engine.Inputs{
@@ -170,9 +165,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			if !r.agrees {
 				rep.Disputed++
 				row.Note = strings.TrimSpace(row.Note + " " + criticNote(r))
-				if c.verdict.Confidence > _criticConfidence {
-					c.verdict.Confidence = _criticConfidence
-				}
+				c.verdict.Confidence = min(c.verdict.Confidence, _criticConfidence)
 			}
 		}
 
@@ -251,7 +244,7 @@ func normaliseFX(txns []domain.Txn, fb *domain.FactBase, fallback map[string]dec
 		}
 		out = append(out, t)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b domain.Txn) int { return strings.Compare(a.ID, b.ID) })
 	return out
 }
 
