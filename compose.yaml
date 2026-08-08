@@ -4,6 +4,7 @@ services:
     image: halyk-agent
     env_file: .env
     working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./data:/app/data:ro
       - ./.cache:/app/.cache
