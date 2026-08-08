@@ -72,13 +72,9 @@ func Evaluate(spec *domain.CovenantSpec, in *Inputs) (domain.Verdict, error) {
 		v.TriggerFired = true
 	}
 
-	within := Compare(metric, spec.Op, spec.Threshold)
 	v.Status = domain.StatusCompliant
-	if !within {
+	if !Compare(metric, spec.Op, spec.Threshold) {
 		v.Status = domain.StatusBreach
-	}
-
-	if !within {
 		if name, ok := carveoutApplies(spec, metric, vars, &v); ok {
 			v.Status = domain.StatusCompliant
 			v.CarveoutApplied = name

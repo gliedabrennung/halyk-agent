@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"slices"
+
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 )
 
@@ -10,7 +12,7 @@ func Evidence(spec *domain.CovenantSpec, in *Inputs, verdict domain.Verdict) (*s
 	var candidates []string
 	for i := range scoped.Txns {
 		trimmed := *scoped
-		trimmed.Txns = append(append([]domain.Txn{}, scoped.Txns[:i]...), scoped.Txns[i+1:]...)
+		trimmed.Txns = slices.Concat(scoped.Txns[:i], scoped.Txns[i+1:])
 
 		alt, err := Evaluate(spec, &trimmed)
 		if err != nil {

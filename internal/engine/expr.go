@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -66,6 +67,14 @@ func isFunc(s string) bool { return s == "max" || s == "min" }
 func tokenize(s string) ([]token, error) {
 	var out []token
 	rs := []rune(s)
+	// Длина пробега рун от i, пока они удовлетворяют ok.
+	run := func(i int, ok func(rune) bool) int {
+		j := i
+		for j < len(rs) && ok(rs[j]) {
+			j++
+		}
+		return j
+	}
 	for i := 0; i < len(rs); {
 		r := rs[i]
 		switch {
@@ -84,10 +93,7 @@ func tokenize(s string) ([]token, error) {
 			out = append(out, token{kind: tokOp, text: string(r)})
 			i++
 		case unicode.IsDigit(r) || r == '.':
-			j := i
-			for j < len(rs) && (unicode.IsDigit(rs[j]) || rs[j] == '.') {
-				j++
-			}
+			j := run(i, func(r rune) bool { return unicode.IsDigit(r) || r == '.' })
 			d, err := decimal.NewFromString(string(rs[i:j]))
 			if err != nil {
 				return nil, fmt.Errorf("bad number %q", string(rs[i:j]))
@@ -95,10 +101,7 @@ func tokenize(s string) ([]token, error) {
 			out = append(out, token{kind: tokNumber, text: string(rs[i:j]), num: d})
 			i = j
 		case unicode.IsLetter(r) || r == '_':
-			j := i
-			for j < len(rs) && (unicode.IsLetter(rs[j]) || unicode.IsDigit(rs[j]) || rs[j] == '_') {
-				j++
-			}
+			j := run(i, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' })
 			out = append(out, token{kind: tokIdent, text: strings.ToLower(string(rs[i:j]))})
 			i = j
 		default:
@@ -182,17 +185,19 @@ func (p *parser) parseFactor() (decimal.Decimal, error) {
 	if !ok {
 		return decimal.Zero, fmt.Errorf("expression ends where a value was expected")
 	}
-	if t.kind == tokOp && t.text == "-" {
-		p.pos++
-		v, err := p.parseFactor()
-		if err != nil {
-			return decimal.Zero, err
+	if t.kind == tokOp {
+		switch t.text {
+		case "-":
+			p.pos++
+			v, err := p.parseFactor()
+			if err != nil {
+				return decimal.Zero, err
+			}
+			return v.Neg(), nil
+		case "+":
+			p.pos++
+			return p.parseFactor()
 		}
-		return v.Neg(), nil
-	}
-	if t.kind == tokOp && t.text == "+" {
-		p.pos++
-		return p.parseFactor()
 	}
 	return p.parsePrimary()
 }
@@ -268,16 +273,10 @@ func (p *parser) parseCall(name string) (decimal.Decimal, error) {
 	if len(args) < 2 {
 		return decimal.Zero, fmt.Errorf("%s() needs at least two arguments", name)
 	}
-	best := args[0]
-	for _, a := range args[1:] {
-		if name == "max" && a.GreaterThan(best) {
-			best = a
-		}
-		if name == "min" && a.LessThan(best) {
-			best = a
-		}
+	if name == "max" {
+		return slices.MaxFunc(args, decimal.Decimal.Cmp), nil
 	}
-	return best, nil
+	return slices.MinFunc(args, decimal.Decimal.Cmp), nil
 }
 
 var _conditionOps = []string{">=", "<=", "==", "!=", ">", "<"}

@@ -2,7 +2,7 @@ package engine
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 	"github.com/shopspring/decimal"
@@ -64,7 +64,7 @@ func medianAbsExpense(txns []*domain.Txn) decimal.Decimal {
 	if len(amounts) == 0 {
 		return decimal.Zero
 	}
-	sort.Slice(amounts, func(i, j int) bool { return amounts[i].LessThan(amounts[j]) })
+	slices.SortFunc(amounts, decimal.Decimal.Cmp)
 
 	mid := len(amounts) / 2
 	if len(amounts)%2 == 1 {

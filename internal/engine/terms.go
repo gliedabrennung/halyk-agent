@@ -2,7 +2,7 @@ package engine
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
@@ -189,25 +189,24 @@ func unrestrictedTransferTerm(term domain.Term, in *Inputs, rows []row) (termRes
 	return res, nil
 }
 
+func containsAny(s string, subs ...string) bool {
+	return slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
+}
+
 func mentionsEBITDA(line string) bool {
 	if strings.Contains(line, "ebitda") {
 		return true
 	}
 	return strings.Contains(line, "выручк") && strings.Contains(line, "операционн") &&
-		(strings.Contains(line, "за вычетом") || strings.Contains(line, "минус"))
+		containsAny(line, "за вычетом", "минус")
 }
 
 func mentionsOneOff(line string) bool {
-	for _, n := range []string{"разов", "one-off", "one off", "add-back", "обратному добавлению"} {
-		if strings.Contains(line, n) {
-			return true
-		}
-	}
-	return false
+	return containsAny(line, "разов", "one-off", "one off", "add-back", "обратному добавлению")
 }
 
 func mentionsRelatedParty(line string) bool {
-	if strings.Contains(line, "аффилирован") || strings.Contains(line, "ограниченные платежи") {
+	if containsAny(line, "аффилирован", "ограниченные платежи") {
 		return true
 	}
 	return strings.Contains(line, "связанн") && strings.Contains(line, "сторон")
@@ -235,7 +234,7 @@ func ebitdaTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 	applyReclassification(&opex, domain.Term{Name: "opex"}, in, domain.CatOperatingCosts)
 
 	res := termResult{Name: term.Name, Value: revenue.Value.Sub(opex.Value)}
-	res.Contributors = append(append([]string{}, revenue.Contributors...), opex.Contributors...)
+	res.Contributors = slices.Concat(revenue.Contributors, opex.Contributors)
 	res.Trace = fmt.Sprintf("%s = revenue %s - operating costs %s = %s",
 		term.Name, revenue.Value.StringFixed(2), opex.Value.StringFixed(2), res.Value.StringFixed(2))
 	return res, nil
@@ -247,9 +246,7 @@ func noteTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 		return res, nil
 	}
 	line := strings.ToLower(term.Line + " " + term.Description)
-	oneOff := strings.Contains(line, "разов") ||
-		strings.Contains(line, "one-off") ||
-		strings.Contains(line, "add-back")
+	oneOff := containsAny(line, "разов", "one-off", "add-back")
 
 	sum := decimal.Zero
 	var parts []string
@@ -450,15 +447,12 @@ func scopeToPeriod(in *Inputs, p domain.Period) *Inputs {
 }
 
 func sortedIDs(ids []string) []string {
-	seen := make(map[string]bool, len(ids))
 	var out []string
 	for _, id := range ids {
-		if id == "" || seen[id] {
-			continue
+		if id != "" {
+			out = append(out, id)
 		}
-		seen[id] = true
-		out = append(out, id)
 	}
-	sort.Strings(out)
-	return out
+	slices.Sort(out)
+	return slices.Compact(out)
 }
