@@ -23,6 +23,13 @@ func txn(id, counterparty, description, amount string) *domain.Txn {
 	}
 }
 
+// blankAmountTxn — строка, у которой выгрузка не дала суммы; её и чинит ledger_amount_fix.
+func blankAmountTxn(id, counterparty, description string) *domain.Txn {
+	t := txn(id, counterparty, description, "0")
+	t.AmountMissing = true
+	return t
+}
+
 func labels(l ...domain.Label) map[string]domain.Label {
 	m := make(map[string]domain.Label, len(l))
 	for _, x := range l {
@@ -352,6 +359,138 @@ func TestAssembleWillNotGuessBetweenTwoRowsOfTheSameAmount(t *testing.T) {
 	for _, tl := range set.Txns {
 		if tl.AdjustmentKind != "" {
 			t.Errorf("%s was marked on an ambiguous amount", tl.TxnID)
+		}
+	}
+}
+
+// Сумма сошлась, а название — чужое. В этом корпусе суммы внутри заёмщика уникальны, поэтому
+// одной суммы «хватило бы»; именно так корректировка аудитора и привязалась бы к посторонней
+// строке в реестре, где суммы повторяются. Название решает.
+func TestAssembleWillNotMatchAnUnrelatedNameOnTheAmountAlone(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{
+				Kind:         domain.AdjReclassify,
+				Counterparty: "Tengiz Risk Engineering Bureau",
+				Amount:       dec("142118.64"),
+				ToCategory:   "операционные расходы",
+				Applied:      true,
+			},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0009", "Saryarka Terminal Properties LLP", "Office rent — north wing", "-142118.64"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "office rent", Category: domain.CatRent, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the unmatched adjustment must be reported, got %v", warnings)
+	}
+	only, _ := set.Lookup("TXN-P1-0009")
+	if only.AdjustmentKind != "" || only.Reclassified {
+		t.Error("a row of another counterparty must not be reclassified because the amount coincides")
+	}
+}
+
+func TestSimilarName(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"Ilek Restoration Works LLP", "ПеК Restoration Works LLP", true},
+		{"Zhaiyk Dredging LLP", "Halyk Dredging LLP", true},
+		{"Aktau Holdings LLP", "Aktau Holdings L.L.P.", true},
+		{"Tengiz Risk Engineering Bureau", "Saryarka Terminal Properties LLP", false},
+		{"Acme LLP", "Beta LLP", false},
+		{"Northwind Catering", "Northwind Catering (Taraz point)", true},
+		{"LLP", "JSC", false},
+	}
+	for _, c := range cases {
+		if got := similarName(c.a, c.b); got != c.want {
+			t.Errorf("similarName(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// Реальный случай B1: модель назвала txn_id, который существует, но принадлежит другой строке
+// — другой контрагент, другой знак, другая сумма. Раскрытие при этом называет и контрагента, и
+// сумму, и они однозначно указывают на настоящую строку. Существующий id не должен побеждать
+// два сходящихся признака: так реклассификация аудитора садится на постороннюю строку молча.
+func TestAssembleDistrustsATxnIDThatContradictsTheDisclosure(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{
+				Kind:         domain.AdjReclassify,
+				TxnID:        "TXN-P1-0001",
+				Counterparty: "Irtysh Advisory Bureau",
+				Amount:       dec("592296.10"),
+				FromCategory: "консультационные услуги",
+				ToCategory:   "процентные расходы",
+				Applied:      true,
+			},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0001", "Bridgeport Property Ltd Service Centre", "Sublet rent received — February", "1656712.15"),
+		txn("TXN-P1-0020", "Irtysh Advisory Bureau", "Advisory engagement on tariff structuring", "-592296.10"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "sublet rent received", Category: domain.CatRent, Contra: true, Source: "rule"},
+		domain.Label{Pattern: "advisory engagement on tariff structuring", Category: domain.CatProfessionalService, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the contradicting id must be reported once, got %v", warnings)
+	}
+
+	wrong, _ := set.Lookup("TXN-P1-0001")
+	if wrong.Reclassified || wrong.AdjustmentKind != "" {
+		t.Error("the named row contradicts the disclosure and must not be marked")
+	}
+	right, _ := set.Lookup("TXN-P1-0020")
+	if !right.Reclassified || right.ReclassifiedTo != domain.CatInterestExpense {
+		t.Errorf("the counterparty and the amount both point at TXN-P1-0020: %+v", right)
+	}
+}
+
+// А непротиворечивый txn_id по-прежнему решает: он точнее имени и суммы.
+func TestAssembleKeepsATxnIDThatAgreesWithTheDisclosure(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{Kind: domain.AdjExcludePeriod, TxnID: "TXN-P1-0045", Amount: dec("0"), Applied: true},
+			{
+				Kind: domain.AdjLedgerAmountFix, TxnID: "TXN-P1-0046",
+				Amount: dec("884204.16"), Applied: true,
+			},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0045", "Aral Freight Arbitration Bureau", "Quay wall survey", "-612884.19"),
+		blankAmountTxn("TXN-P1-0046", "Ural Crane Works LLP", "Crane servicing contract"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "quay wall survey", Category: domain.CatOperatingCosts, Source: "rule"},
+		domain.Label{Pattern: "crane servicing contract", Category: domain.CatOperatingCosts, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("both ids agree with their rows: %v", warnings)
+	}
+	for _, id := range []string{"TXN-P1-0045", "TXN-P1-0046"} {
+		tl, _ := set.Lookup(id)
+		if tl.AdjustmentKind == "" {
+			t.Errorf("%s lost its adjustment", id)
 		}
 	}
 }

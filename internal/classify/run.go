@@ -454,12 +454,20 @@ func markAdjustments(
 		// бывает искажено; сумма — цифра, которую и модель, и документ обычно передают верно.
 		idx := -1
 		if adj.TxnID != "" {
-			if i, ok := byID[adj.TxnID]; ok {
-				idx = i
-			} else {
+			i, ok := byID[adj.TxnID]
+			switch {
+			case !ok:
 				warnings = append(warnings, fmt.Sprintf(
 					"%s: adjustment names %s, which is not a row of this borrower; matching by counterparty and amount instead",
 					scenarioID, adj.TxnID))
+			case contradictsRow(adj, set.Txns[i], amountOf):
+				warnings = append(warnings, fmt.Sprintf(
+					"%s: adjustment names %s, but that row is %q for %s while the disclosure says %q for %s; "+
+						"ignoring the id and matching by counterparty and amount instead",
+					scenarioID, adj.TxnID, set.Txns[i].Counterparty, amountOf[set.Txns[i].TxnID].Abs(),
+					adj.Counterparty, adj.Amount.Abs()))
+			default:
+				idx = i
 			}
 		}
 		if idx < 0 && adj.Counterparty != "" {
@@ -469,8 +477,8 @@ func markAdjustments(
 			if i := rowForAmount(adj, set, amountOf); i >= 0 {
 				idx = i
 				warnings = append(warnings, fmt.Sprintf(
-					"%s: no row is booked to %q, but %s carries its amount %s; matched on the amount",
-					scenarioID, adj.Counterparty, set.Txns[i].TxnID, adj.Amount))
+					"%s: no row is booked to %q, but %s carries its amount %s under the similar name %q; matched on both",
+					scenarioID, adj.Counterparty, set.Txns[i].TxnID, adj.Amount, set.Txns[i].Counterparty))
 			}
 		}
 		if idx < 0 {
@@ -494,12 +502,36 @@ func markAdjustments(
 	return warnings
 }
 
-// rowForAmount ищет единственную строку с такой же абсолютной суммой. Последняя попытка:
-// имя в документе может быть искажено, а цифра — нет. Двусмысленность отсекается.
+// contradictsRow сообщает, что названный моделью txn_id указывает не туда: строка нашлась, но
+// её контрагент и сумма спорят с тем, что говорит само раскрытие. Существующий id — не повод
+// не проверять его: модель придумывает не только небывшие идентификаторы, но и вполне
+// существующие, и тогда корректировка аудитора садится на постороннюю строку молча.
+//
+// Сумму не сверяем у ledger_amount_fix: такая корректировка ровно затем и нужна, что суммы у
+// строки в выгрузке нет.
+func contradictsRow(adj domain.Adjustment, tl domain.TxnLabel, amountOf map[string]decimal.Decimal) bool {
+	if adj.Counterparty != "" && !similarName(adj.Counterparty, tl.Counterparty) {
+		return true
+	}
+	if adj.Kind == domain.AdjLedgerAmountFix || !adj.Amount.IsPositive() {
+		return false
+	}
+	return !amountOf[tl.TxnID].Abs().Equal(adj.Amount.Abs())
+}
+
+// rowForAmount ищет единственную строку, у которой сходится и сумма, и — если корректировка
+// вообще называет контрагента — название. Одной суммы недостаточно: в этом реестре суммы
+// внутри заёмщика уникальны, но в реестре, где повторяются аренда и круглые числа, «та же
+// сумма» привязала бы корректировку аудитора к посторонней строке, и та строка молча ушла бы
+// в reclassified и в подбор evidence. Когда контрагент не назван, сравнивать нечего и решает
+// сумма. Двусмысленность отсекается.
 func rowForAmount(adj domain.Adjustment, set *domain.LabelSet, amountOf map[string]decimal.Decimal) int {
 	hit := -1
 	for i, tl := range set.Txns {
 		if !amountOf[tl.TxnID].Abs().Equal(adj.Amount.Abs()) {
+			continue
+		}
+		if adj.Counterparty != "" && !similarName(adj.Counterparty, tl.Counterparty) {
 			continue
 		}
 		if hit >= 0 {
@@ -508,6 +540,53 @@ func rowForAmount(adj domain.Adjustment, set *domain.LabelSet, amountOf map[stri
 		hit = i
 	}
 	return hit
+}
+
+// _nameSimilarity — доля совпадающих символов, при которой два написания считаются одной
+// организацией. Ниже — разные организации.
+const _nameSimilarity = 0.6
+
+// similarName сообщает, что два названия — скорее всего одна организация, набранная
+// по-разному: текстовый слой документа теряет символы, путает алфавиты и рвёт слова.
+// Достаточно уцелевшего значимого слова либо малого расстояния Левенштейна.
+func similarName(a, b string) bool {
+	ka, kb := domain.EntityKey(a), domain.EntityKey(b)
+	if ka == "" || kb == "" {
+		return false
+	}
+	if ka == kb {
+		return true
+	}
+	other := strings.Fields(kb)
+	for _, word := range strings.Fields(ka) {
+		if len([]rune(word)) >= 4 && slices.Contains(other, word) {
+			return true
+		}
+	}
+	ra, rb := []rune(ka), []rune(kb)
+	longest := max(len(ra), len(rb))
+	return float64(longest-editDistance(ra, rb))/float64(longest) >= _nameSimilarity
+}
+
+// editDistance — расстояние Левенштейна на рунах, две строки таблицы вместо матрицы.
+func editDistance(a, b []rune) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(prev[j]+1, curr[j-1]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
 }
 
 // rowForCounterparty находит единственную строку контрагента; когда их несколько, различает
