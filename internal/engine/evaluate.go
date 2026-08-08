@@ -22,12 +22,17 @@ func Evaluate(spec *domain.CovenantSpec, in *Inputs) (domain.Verdict, error) {
 		Source:     SourceEngine,
 		Confidence: spec.Confidence,
 	}
+	const provisionalConfidence = 0.4
 	for _, t := range terms {
 		v.Trace = append(v.Trace, t.Trace)
 		v.Contributors = append(v.Contributors, t.Contributors...)
 		if t.Unmeasurable {
 
 			v.Confidence = 0.2
+		}
+		if t.Provisional {
+
+			v.Confidence = min(v.Confidence, provisionalConfidence)
 		}
 	}
 	v.Contributors = sortedIDs(v.Contributors)

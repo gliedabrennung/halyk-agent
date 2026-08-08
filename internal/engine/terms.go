@@ -80,6 +80,10 @@ type termResult struct {
 	Trace        string
 
 	Unmeasurable bool
+
+	// Provisional: терм посчитан по признаку, восстановленному кодом, а не объявленному
+	// спецификацией. Считается, но уверенность ячейки ограничивается.
+	Provisional bool
 }
 
 func computeTerms(
@@ -117,8 +121,11 @@ func computeTerm(
 
 	line := strings.ToLower(term.Line)
 
+	// Ветку выбирает объявленный kind терма, а не формулировка пункта. Единственное
+	// исключение — EBITDA: это определение («выручка за вычетом операционных расходов»),
+	// а не вид источника, и модель отдаёт его как обычную строку отчётности.
 	switch {
-	case term.Kind == domain.TermRelatedPartyPayments || mentionsRelatedParty(line):
+	case term.Kind == domain.TermRelatedPartyPayments:
 		return relatedPartyTerm(term, rows)
 
 	case term.Kind == domain.TermGroupConsolidated:
@@ -127,7 +134,7 @@ func computeTerm(
 	case mentionsEBITDA(line):
 		return ebitdaTerm(term, in, rows)
 
-	case term.Kind == domain.TermStatementNote || mentionsOneOff(line):
+	case term.Kind == domain.TermStatementNote:
 		return noteTerm(term, in, rows)
 	}
 
@@ -140,8 +147,8 @@ func computeTerm(
 			spec.ScenarioID, spec.ClauseID, term.Name, term.Line)
 	}
 
-	if cat == domain.CatAssetTransfer && strings.Contains(line, "неограниченн") {
-		return unrestrictedTransferTerm(term, in, rows)
+	if term.EntityScope != "" {
+		return scopedEntityTerm(term, in, rows, cat)
 	}
 
 	out := categoryTerm(term, rows, cat, cat == domain.CatCapex)
@@ -149,33 +156,37 @@ func computeTerm(
 	return out, nil
 }
 
-func unrestrictedTransferTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
-	res := termResult{Name: term.Name}
+// scopedEntityTerm суммирует строки категории только по контрагентам, чей статус в
+// факт-базе совпадает с объявленным в спеке (restricted / unrestricted). Статус — поле
+// спецификации: движок не выводит его из формулировки пункта.
+func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Category) (termResult, error) {
+	res := termResult{Name: term.Name, Provisional: term.ScopeInferred}
 
-	unrestricted := make(map[string]bool)
+	inScope := make(map[string]bool)
 	if in.Facts != nil {
 		for _, p := range in.Facts.Parties {
-			if p.Status == domain.StatusUnrestricted {
-				if key := domain.EntityKey(p.Name); key != "" {
-					unrestricted[key] = true
-				}
+			if p.Status != term.EntityScope {
+				continue
+			}
+			if key := domain.EntityKey(p.Name); key != "" {
+				inScope[key] = true
 			}
 		}
 	}
-	if len(unrestricted) == 0 {
+	if len(inScope) == 0 {
 
 		res.Unmeasurable = true
 		res.Trace = fmt.Sprintf(
-			"%s: the dossier discloses no subsidiary security coverage, "+
-				"so restricted and unrestricted transfers cannot be told apart", term.Name)
+			"%s: the dossier names no %s counterparty, so %s rows cannot be narrowed to them",
+			term.Name, term.EntityScope, cat)
 	}
 
 	sum := decimal.Zero
 	for _, r := range rows {
-		if r.label.Category != domain.CatAssetTransfer {
+		if r.label.Category != cat {
 			continue
 		}
-		if len(unrestricted) > 0 && !unrestricted[domain.EntityKey(r.txn.Counterparty)] {
+		if len(inScope) > 0 && !inScope[domain.EntityKey(r.txn.Counterparty)] {
 			continue
 		}
 		sum = sum.Add(r.txn.AmountUSD)
@@ -183,8 +194,12 @@ func unrestrictedTransferTerm(term domain.Term, in *Inputs, rows []row) (termRes
 	}
 	res.Value = sum.Abs()
 	if res.Trace == "" {
-		res.Trace = fmt.Sprintf("%s = %s over %d transfer(s) to unrestricted subsidiaries",
-			term.Name, res.Value.StringFixed(2), len(res.Contributors))
+		res.Trace = fmt.Sprintf("%s = %s over %d %s row(s) booked to a %s counterparty",
+			term.Name, res.Value.StringFixed(2), len(res.Contributors), cat, term.EntityScope)
+	}
+	if term.ScopeInferred {
+		res.Trace += fmt.Sprintf("  [scope %q was read off the clause wording, not declared by the "+
+			"specification; re-run `covenants` so the model states entity_scope]", term.EntityScope)
 	}
 	return res, nil
 }
@@ -193,23 +208,20 @@ func containsAny(s string, subs ...string) bool {
 	return slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
 }
 
+// mentionsEBITDA распознаёт EBITDA и её раскрытые определения. Это словарь синонимов
+// одного показателя, а не подгонка под конкретный договор: терм с такой строкой считается
+// как выручка минус операционные расходы, откуда бы формулировка ни пришла.
 func mentionsEBITDA(line string) bool {
-	if strings.Contains(line, "ebitda") {
+	if containsAny(line, "ebitda", "прибыль до вычета", "earnings before interest") {
 		return true
 	}
-	return strings.Contains(line, "выручк") && strings.Contains(line, "операционн") &&
-		containsAny(line, "за вычетом", "минус")
+	return containsAny(line, "выручк", "revenue") &&
+		containsAny(line, "операционн", "operating") &&
+		containsAny(line, "за вычетом", "минус", "less", "net of")
 }
 
 func mentionsOneOff(line string) bool {
 	return containsAny(line, "разов", "one-off", "one off", "add-back", "обратному добавлению")
-}
-
-func mentionsRelatedParty(line string) bool {
-	if containsAny(line, "аффилирован", "ограниченные платежи") {
-		return true
-	}
-	return strings.Contains(line, "связанн") && strings.Contains(line, "сторон")
 }
 
 func relatedPartyTerm(term domain.Term, rows []row) (termResult, error) {
@@ -245,8 +257,7 @@ func noteTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 	if in.Facts == nil {
 		return res, nil
 	}
-	line := strings.ToLower(term.Line + " " + term.Description)
-	oneOff := containsAny(line, "разов", "one-off", "add-back")
+	oneOff := mentionsOneOff(strings.ToLower(term.Line + " " + term.Description))
 
 	sum := decimal.Zero
 	var parts []string

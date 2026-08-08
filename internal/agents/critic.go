@@ -76,18 +76,10 @@ func specWire(spec *domain.CovenantSpec) covenantJSON {
 		Confidence:   spec.Confidence,
 	}
 	for _, t := range spec.Terms {
-		wire := struct {
-			Name             string `json:"name"`
-			Kind             string `json:"kind"`
-			Line             string `json:"line"`
-			Description      string `json:"description"`
-			Reclassification string `json:"reclassification"`
-			EntitySource     string `json:"entity_source"`
-			Direction        string `json:"direction"`
-			Constant         string `json:"constant"`
-		}{
+		wire := termJSON{
 			Name: t.Name, Kind: string(t.Kind), Line: t.Line, Description: t.Description,
-			Reclassification: t.Reclassification, EntitySource: t.EntitySource, Direction: t.Direction,
+			Reclassification: t.Reclassification, EntitySource: t.EntitySource,
+			EntityScope: t.EntityScope, Direction: t.Direction,
 		}
 		if !t.Constant.IsZero() {
 			wire.Constant = t.Constant.String()

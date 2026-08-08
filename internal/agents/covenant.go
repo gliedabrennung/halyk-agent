@@ -25,24 +25,27 @@ type CovenantInput struct {
 	AmendmentsIn string
 }
 
+type termJSON struct {
+	Name             string `json:"name"`
+	Kind             string `json:"kind"`
+	Line             string `json:"line"`
+	Description      string `json:"description"`
+	Reclassification string `json:"reclassification"`
+	EntitySource     string `json:"entity_source"`
+	EntityScope      string `json:"entity_scope"`
+	Direction        string `json:"direction"`
+	Constant         string `json:"constant"`
+}
+
 type covenantJSON struct {
-	ClauseID   string `json:"clause_id"`
-	Title      string `json:"title"`
-	Expression string `json:"expression"`
-	Terms      []struct {
-		Name             string `json:"name"`
-		Kind             string `json:"kind"`
-		Line             string `json:"line"`
-		Description      string `json:"description"`
-		Reclassification string `json:"reclassification"`
-		EntitySource     string `json:"entity_source"`
-		Direction        string `json:"direction"`
-		Constant         string `json:"constant"`
-	} `json:"terms"`
-	Op        string `json:"op"`
-	Threshold string `json:"threshold"`
-	Unit      string `json:"unit"`
-	Period    struct {
+	ClauseID   string     `json:"clause_id"`
+	Title      string     `json:"title"`
+	Expression string     `json:"expression"`
+	Terms      []termJSON `json:"terms"`
+	Op         string     `json:"op"`
+	Threshold  string     `json:"threshold"`
+	Unit       string     `json:"unit"`
+	Period     struct {
 		Kind  string `json:"kind"`
 		From  string `json:"from"`
 		To    string `json:"to"`
@@ -196,6 +199,9 @@ func buildSpec(cj *covenantJSON, in CovenantInput) (*domain.CovenantSpec, error)
 			return nil, fmt.Errorf("term %q: %w", term.Name, err)
 		}
 		term.EntitySource = normaliseEntitySource(term.Kind, term.EntitySource)
+		if term.EntityScope, err = normaliseEntityScope(t.EntityScope); err != nil {
+			return nil, fmt.Errorf("term %q: %w", term.Name, err)
+		}
 		if t.Constant != "" {
 			c, err := parseDecimal(t.Constant)
 			if err != nil {
@@ -295,6 +301,22 @@ func normaliseEntitySource(kind domain.TermKind, v string) string {
 		return v
 	}
 	return ""
+}
+
+// normaliseEntityScope принимает статус контрагента, к которому пункт сужает терм.
+// Незнакомое значение — ошибка, а не пустая строка: молча снять сужение значит посчитать
+// терм по всем контрагентам и выдать другое число без единого следа.
+func normaliseEntityScope(v string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "any", "all", "none":
+		return "", nil
+	case domain.StatusUnrestricted, "unrestricted_subsidiaries", "outside_security":
+		return domain.StatusUnrestricted, nil
+	case domain.StatusRestricted, "restricted_subsidiaries", "inside_security":
+		return domain.StatusRestricted, nil
+	}
+	return "", fmt.Errorf("entity_scope %q is not one of %s, %s or empty",
+		v, domain.StatusRestricted, domain.StatusUnrestricted)
 }
 
 func validTermKind(k domain.TermKind) bool {

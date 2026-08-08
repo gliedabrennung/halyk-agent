@@ -84,8 +84,23 @@ type Term struct {
 
 	EntitySource string `json:"entity_source,omitempty"`
 
+	// EntityScope сужает терм до контрагентов с этим статусом в факт-базе:
+	// StatusRestricted, StatusUnrestricted или пусто — все контрагенты.
+	// Объявляется спецификацией; движок его не выводит из текста пункта.
+	EntityScope string `json:"entity_scope,omitempty"`
+
+	// ScopeInferred: EntityScope восстановлен по формулировке пункта, а не
+	// объявлен моделью — спека сохранена до появления поля. Такая ячейка
+	// помечается в трассе и теряет уверенность.
+	ScopeInferred bool `json:"scope_inferred,omitempty"`
+
 	Direction string          `json:"direction,omitempty"`
 	Constant  decimal.Decimal `json:"constant,omitempty"`
+}
+
+// ValidEntityScope сообщает, что скоуп — известный статус стороны или пусто.
+func ValidEntityScope(s string) bool {
+	return s == "" || s == StatusRestricted || s == StatusUnrestricted
 }
 
 type CovenantSpec struct {

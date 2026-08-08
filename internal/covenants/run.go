@@ -176,6 +176,10 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 				return nil
 			}
 			spec.SourceRef.DocID = j.input.ScenarioID
+			for _, note := range Normalise(spec) {
+				opts.Log.Warn("specification normalised",
+					"scenario", j.scenario, "clause", j.clause, "note", note)
+			}
 			specs[i] = spec
 
 			mu.Lock()
