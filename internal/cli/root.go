@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gliedabrennung/halyk-agent/internal/classify"
 	"github.com/gliedabrennung/halyk-agent/internal/config"
+	"github.com/gliedabrennung/halyk-agent/internal/covenants"
 	"github.com/gliedabrennung/halyk-agent/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -84,10 +86,12 @@ func Execute() int {
 		newIngestCmd(app),
 		newTriageCmd(app),
 		newCovenantsCmd(app),
-		newSpecsCmd(app),
+		newReviewCmd(app, "specs <scenario>...",
+			"Show extracted covenant specs next to the clause text they came from", covenants.Review),
 		newFactsCmd(app),
 		newClassifyCmd(app),
-		newLabelsCmd(app),
+		newReviewCmd(app, "labels <scenario>...",
+			"Show a borrower's labelled ledger: category totals and every row", classify.Review),
 		newStabilityCmd(app),
 		newEvaluateCmd(app),
 		newSubmitCmd(app),

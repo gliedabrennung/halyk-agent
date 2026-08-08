@@ -17,6 +17,7 @@ import (
 	"github.com/gliedabrennung/halyk-agent/internal/llm"
 	"github.com/gliedabrennung/halyk-agent/internal/report"
 	"github.com/gliedabrennung/halyk-agent/internal/stability"
+	"github.com/gliedabrennung/halyk-agent/internal/store"
 	"github.com/gliedabrennung/halyk-agent/internal/submit"
 	"github.com/spf13/cobra"
 )
@@ -160,14 +161,15 @@ func newCovenantsCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-func newSpecsCmd(app *App) *cobra.Command {
+// newReviewCmd — команда-читалка: печатает разбор стора по каждому названному сценарию.
+func newReviewCmd(app *App, use, short string, review func(*store.Store, string) (string, error)) *cobra.Command {
 	return &cobra.Command{
-		Use:   "specs <scenario>...",
-		Short: "Show extracted covenant specs next to the clause text they came from",
+		Use:   use,
+		Short: short,
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			for _, scn := range args {
-				out, err := covenants.Review(app.Store, scn)
+				out, err := review(app.Store, scn)
 				if err != nil {
 					return err
 				}
@@ -234,24 +236,6 @@ func newClassifyCmd(app *App) *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&only, "only", nil, "classify just these scenarios")
 	return cmd
-}
-
-func newLabelsCmd(app *App) *cobra.Command {
-	return &cobra.Command{
-		Use:   "labels <scenario>...",
-		Short: "Show a borrower's labelled ledger: category totals and every row",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			for _, scn := range args {
-				out, err := classify.Review(app.Store, scn)
-				if err != nil {
-					return err
-				}
-				fmt.Print(out)
-			}
-			return nil
-		},
-	}
 }
 
 func newEvaluateCmd(app *App) *cobra.Command {

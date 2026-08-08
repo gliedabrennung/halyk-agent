@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -16,12 +17,7 @@ type teeHandler struct {
 var _ slog.Handler = teeHandler{}
 
 func (t teeHandler) Enabled(ctx context.Context, lv slog.Level) bool {
-	for _, h := range t.handlers {
-		if h.Enabled(ctx, lv) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(t.handlers, func(h slog.Handler) bool { return h.Enabled(ctx, lv) })
 }
 
 func (t teeHandler) Handle(ctx context.Context, r slog.Record) error {
