@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
         poppler-utils \
         tesseract-ocr \
         tesseract-ocr-eng \
