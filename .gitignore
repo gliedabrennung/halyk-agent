@@ -16,3 +16,5 @@
 # Local tooling: IDE and agent settings
 /.idea/
 /.claude/
+# Рабочие записи, не для публикации
+/ASSUMPTIONS.md
