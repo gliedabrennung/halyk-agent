@@ -12,3 +12,7 @@
 /logs/
 /artifacts/
 /out/
+
+# Local tooling: IDE and agent settings
+/.idea/
+/.claude/
