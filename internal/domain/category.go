@@ -57,6 +57,10 @@ var _operatingCategories = map[Category]bool{
 
 func (c Category) IsOperating() bool { return _operatingCategories[c] }
 
+// _lineAliases переводит формулировку строки отчётности или пункта договора в категорию.
+// Порядок записей не значит ничего: CategoryForLine берёт самое длинное совпадение, а не
+// первое. Иначе одна перестановка таблицы молча меняла бы категорию у строки, где
+// встречаются два признака сразу («капитальных активов, переданных дочерним организациям»).
 var _lineAliases = []struct {
 	needle string
 	cat    Category
@@ -92,10 +96,14 @@ func CategoryForLine(line string) (Category, bool) {
 	if l == "" {
 		return CatUnknown, false
 	}
+	best, bestLen := CatUnknown, 0
 	for _, a := range _lineAliases {
-		if strings.Contains(l, a.needle) {
-			return a.cat, true
+		if len(a.needle) > bestLen && strings.Contains(l, a.needle) {
+			best, bestLen = a.cat, len(a.needle)
 		}
+	}
+	if bestLen > 0 {
+		return best, true
 	}
 	if c := Category(l); ValidCategory(c) {
 		return c, true
