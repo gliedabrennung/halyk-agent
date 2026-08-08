@@ -3,6 +3,7 @@ package covenants
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 	"github.com/gliedabrennung/halyk-agent/internal/index"
@@ -88,12 +89,11 @@ func Review(st *store.Store, scenarioID string) (string, error) {
 
 func collapse(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-func dateOf(t interface{ Format(string) string }) string {
-	s := t.Format("2006-01-02")
-	if strings.HasPrefix(s, "0001-01-01") {
+func dateOf(t time.Time) string {
+	if t.IsZero() {
 		return "—"
 	}
-	return s
+	return t.Format("2006-01-02")
 }
 
 func wrap(s string, width int) string {
@@ -118,9 +118,5 @@ func wrap(s string, width int) string {
 }
 
 func indent(s, prefix string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = prefix + l
-	}
-	return strings.Join(lines, "\n")
+	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
 }
