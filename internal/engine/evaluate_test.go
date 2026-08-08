@@ -631,3 +631,64 @@ func TestScopedTermCountsOnlyTheCounterpartiesInScope(t *testing.T) {
 		t.Errorf("confidence = %v: the scope was applied, nothing is missing", v.Confidence)
 	}
 }
+
+func TestATermIsUnmeasurableWhileARowHasNoAmount(t *testing.T) {
+	blank := ledgerRow("TXN-P1-0033", 20, "State Revenue Committee", "0")
+	blank.AmountMissing = true
+
+	in := &Inputs{
+		Facts: &domain.FactBase{},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+			label("TXN-P1-0010", domain.CatTaxes),
+			label("TXN-P1-0033", domain.CatTaxes),
+		}},
+		Txns: []domain.Txn{ledgerRow("TXN-P1-0010", 10, "Tax Office", "-402118.64"), blank},
+	}
+	s := spec("taxes", "<=", "500000", term("taxes", "Налоги"))
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if v.Confidence > 0.2 {
+		t.Errorf("confidence = %v, want it dropped while a row of the term has no amount", v.Confidence)
+	}
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "TXN-P1-0033") }) {
+		t.Errorf("the trace must name the unpriced row: %q", v.Trace)
+	}
+	if !v.Actual.Equal(dec("402118.64")) {
+		t.Errorf("actual = %s: the priced rows are still summed", v.Actual)
+	}
+}
+
+func TestTheAuditorsFigureMakesTheTermMeasurableAgain(t *testing.T) {
+	blank := ledgerRow("TXN-P1-0033", 20, "State Revenue Committee", "0")
+	blank.AmountMissing = true
+
+	in := &Inputs{
+		Facts: &domain.FactBase{Adjustments: []domain.Adjustment{{
+			Kind: domain.AdjLedgerAmountFix, TxnID: "TXN-P1-0033",
+			Amount: dec("486204.19"), Applied: true,
+		}}},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+			label("TXN-P1-0010", domain.CatTaxes),
+			label("TXN-P1-0033", domain.CatTaxes),
+		}},
+		Txns: []domain.Txn{ledgerRow("TXN-P1-0010", 10, "Tax Office", "-402118.64"), blank},
+	}
+	s := spec("taxes", "<=", "500000", term("taxes", "Налоги"))
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("888322.83")) {
+		t.Errorf("actual = %s, want 888322.83: the disclosed figure joins the sum", v.Actual)
+	}
+	if v.Status != domain.StatusBreach {
+		t.Errorf("status = %s, want BREACH", v.Status)
+	}
+	if v.Confidence <= 0.2 {
+		t.Errorf("confidence = %v: nothing is missing once the auditor states the figure", v.Confidence)
+	}
+}

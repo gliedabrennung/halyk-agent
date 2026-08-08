@@ -105,7 +105,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	for i := range led.Txns {
 		if t := &led.Txns[i]; t.AmountMissing {
 			rep.MissingAmounts = append(rep.MissingAmounts, t.ID)
-			opts.Log.Error("ledger row has no amount; the figure must come from a document",
+			opts.Log.Warn("ledger row has no amount; the figure must come from a document",
 				"txn", t.ID, "scenario", t.ScenarioID, "counterparty", t.Counterparty,
 				"description", t.Description, "date", t.Date.Format("2006-01-02"))
 		}

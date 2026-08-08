@@ -113,12 +113,33 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 				return nil, err
 			}
 		}
+		for _, id := range unfixedAmounts(inputs[i].MissingAmounts, fb) {
+			opts.Log.Warn("the ledger left this row without an amount and no document states it",
+				"scenario", fb.ScenarioID, "txn", id)
+			rep.Unfixed = append(rep.Unfixed, fmt.Sprintf("%s/%s", fb.ScenarioID, id))
+		}
 		rep.Rows = append(rep.Rows, summarise(fb, len(inputs[i].Documents), ocrPageCount(inputs[i])))
 		rep.TotalOCRPage += ocrPageCount(inputs[i])
 		rep.Scenarios++
 	}
 	rep.Duration = time.Since(start)
 	return rep, nil
+}
+
+func unfixedAmounts(requested []string, fb *domain.FactBase) []string {
+	fixed := make(map[string]bool, len(fb.Adjustments))
+	for _, a := range fb.Adjustments {
+		if a.Kind == domain.AdjLedgerAmountFix && a.Applied && a.Amount.IsPositive() {
+			fixed[a.TxnID] = true
+		}
+	}
+	var out []string
+	for _, id := range requested {
+		if !fixed[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func missingAmountTxns(txns []domain.Txn, scenarioID string) []string {

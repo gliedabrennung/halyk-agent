@@ -13,6 +13,7 @@ type Report struct {
 	Scenarios    int           `json:"scenarios"`
 	Rows         []Row         `json:"rows"`
 	Failed       []string      `json:"failed,omitempty"`
+	Unfixed      []string      `json:"unfixed_amounts,omitempty"`
 	Path         string        `json:"path"`
 	TotalOCRPage int           `json:"total_ocr_pages"`
 }
@@ -79,6 +80,12 @@ func (r *Report) String() string {
 		fmt.Fprintf(&b, "  FAILED:\n")
 		for _, f := range r.Failed {
 			fmt.Fprintf(&b, "    %s\n", f)
+		}
+	}
+	if len(r.Unfixed) > 0 {
+		fmt.Fprintf(&b, "  NO AMOUNT ANYWHERE, the row counts as zero:\n")
+		for _, id := range r.Unfixed {
+			fmt.Fprintf(&b, "    %s\n", id)
 		}
 	}
 	fmt.Fprintf(&b, "wrote %s/<scenario>.json\n%s\n", r.Path, line)

@@ -202,7 +202,14 @@ func relatedPartyTerm(term domain.Term, in *Inputs, rows []row) (termResult, err
 	res := termResult{Name: term.Name}
 	sum := decimal.Zero
 	for _, r := range rows {
-		if !r.label.RelatedParty || !r.txn.AmountUSD.IsNegative() {
+		if !r.label.RelatedParty {
+			continue
+		}
+		if r.txn.AmountMissing {
+			res.Unmeasurable = true
+			continue
+		}
+		if !r.txn.AmountUSD.IsNegative() {
 			continue
 		}
 		sum = sum.Add(r.txn.AmountUSD)
@@ -242,6 +249,7 @@ func ebitdaTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 	applyReclassification(&opex, domain.Term{Name: "opex"}, in, domain.CatOperatingCosts)
 
 	res := termResult{Name: term.Name, Value: revenue.Value.Sub(opex.Value)}
+	res.Unmeasurable = revenue.Unmeasurable || opex.Unmeasurable
 	res.Contributors = slices.Concat(revenue.Contributors, opex.Contributors)
 	res.Trace = fmt.Sprintf("%s = revenue %s - operating costs %s = %s",
 		term.Name, revenue.Value.StringFixed(2), opex.Value.StringFixed(2), res.Value.StringFixed(2))
@@ -304,11 +312,16 @@ func categoryTerm(
 	res := termResult{Name: term.Name}
 	policy := reclassPolicy(term)
 	sum := decimal.Zero
+	var unpriced []string
 	for _, r := range rows {
-		if !directionAllows(term.Direction, r) {
+		if !rowCountsIn(r, cat, policy, includeTransfers) {
 			continue
 		}
-		if !rowCountsIn(r, cat, policy, includeTransfers) {
+		if r.txn.AmountMissing {
+			unpriced = append(unpriced, r.txn.ID)
+			continue
+		}
+		if !directionAllows(term.Direction, r) {
 			continue
 		}
 		sum = sum.Add(r.txn.AmountUSD)
@@ -317,6 +330,11 @@ func categoryTerm(
 	res.Value = sum.Abs()
 	res.Trace = fmt.Sprintf("%s = %s over %d %s row(s)",
 		term.Name, res.Value.StringFixed(2), len(res.Contributors), cat)
+	if len(unpriced) > 0 {
+		res.Unmeasurable = true
+		res.Trace += fmt.Sprintf("; %s carries no amount in the export and none was disclosed, so it counts as zero",
+			strings.Join(unpriced, ", "))
+	}
 	return res
 }
 
