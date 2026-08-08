@@ -3,6 +3,7 @@ package covenants
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -90,64 +91,27 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return nil, err
 	}
 
-	type job struct {
-		scenario string
-		clause   string
-		input    agents.CovenantInput
-	}
+	expected := 0
 	var jobs []job
+	var unreadable []string
 
 	for _, scn := range scenarios {
 		clauses := tpl.ClausesFor(scn)
-		agreements := idx.CreditAgreements(scn)
-		if len(agreements) == 0 {
-			return nil, fmt.Errorf("%s: no effective credit agreement in the index", scn)
-		}
+		expected += len(clauses)
 
-		agreement := agreements[0]
-		for _, a := range agreements {
-			if a.Scan.HasClauses(clauses) {
-				agreement = a
-				break
+		scnJobs, located, err := clauseJobs(opts.Store.DocText, idx, scn, clauses)
+		if err != nil {
+			opts.Log.Error("borrower left without specifications; the other borrowers continue",
+				"scenario", scn, "clauses", strings.Join(clauses, ","), "err", err)
+			for _, clauseID := range clauses {
+				unreadable = append(unreadable, fmt.Sprintf("%s/%s: %v", scn, clauseID, err))
 			}
+			continue
 		}
-
-		text, err := opts.Store.DocText(agreement.DocID)
-		if err != nil {
-			return nil, fmt.Errorf("%s: load agreement %s: %w", scn, agreement.DocID, err)
-		}
-		article, err := CovenantArticleFor(text, clauses)
-		if err != nil {
-			return nil, fmt.Errorf("%s (%s): %w", scn, agreement.DocID, err)
-		}
-		definitions := definitionsText(text)
-		amendments, err := amendmentText(opts.Store, idx, scn)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, clauseID := range clauses {
-			clauseText, err := Clause(article.Text, clauseID)
-			if err != nil {
-				return nil, fmt.Errorf("%s (%s): %w", scn, agreement.DocID, err)
-			}
-			jobs = append(jobs, job{
-				scenario: scn,
-				clause:   clauseID,
-				input: agents.CovenantInput{
-					ScenarioID:   scn,
-					ClauseID:     clauseID,
-					Company:      agreement.Meta.CompanyName,
-					ClauseText:   clauseText,
-					ArticleText:  article.Text,
-					Definitions:  definitions,
-					AmendmentsIn: amendments,
-				},
-			})
-		}
+		jobs = append(jobs, scnJobs...)
 		opts.Log.Info("covenant article located",
-			"scenario", scn, "doc", agreement.DocID, "article", article.Number,
-			"clauses", strings.Join(clauses, ","), "chars", len(article.Text))
+			"scenario", scn, "doc", located.DocID, "article", located.Article,
+			"clauses", strings.Join(clauses, ","), "chars", located.Chars)
 	}
 
 	specs := make([]*domain.CovenantSpec, len(jobs))
@@ -193,7 +157,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return nil, err
 	}
 
-	var failed []string
+	failed := unreadable
 	for _, f := range failures {
 		if f != "" {
 			failed = append(failed, f)
@@ -232,8 +196,76 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	rep.Duration = time.Since(start)
 	rep.Path = dir
 	rep.Failed = failed
-	rep.Expected = len(jobs)
+	rep.Expected = expected
 	return rep, nil
+}
+
+type job struct {
+	scenario string
+	clause   string
+	input    agents.CovenantInput
+}
+
+type located struct {
+	DocID   string
+	Article int
+	Chars   int
+}
+
+func clauseJobs(
+	docText func(string) (string, error),
+	idx *index.Index,
+	scenarioID string,
+	clauses []string,
+) ([]job, located, error) {
+	agreements := idx.CreditAgreements(scenarioID)
+	if len(agreements) == 0 {
+		return nil, located{}, errors.New("no effective credit agreement in the index")
+	}
+
+	agreement := agreements[0]
+	for _, a := range agreements {
+		if a.Scan.HasClauses(clauses) {
+			agreement = a
+			break
+		}
+	}
+
+	text, err := docText(agreement.DocID)
+	if err != nil {
+		return nil, located{}, fmt.Errorf("load agreement %s: %w", agreement.DocID, err)
+	}
+	article, err := CovenantArticleFor(text, clauses)
+	if err != nil {
+		return nil, located{}, fmt.Errorf("%s: %w", agreement.DocID, err)
+	}
+	amendments, err := amendmentText(docText, idx, scenarioID)
+	if err != nil {
+		return nil, located{}, err
+	}
+	definitions := definitionsText(text)
+
+	jobs := make([]job, 0, len(clauses))
+	for _, clauseID := range clauses {
+		clauseText, err := Clause(article.Text, clauseID)
+		if err != nil {
+			return nil, located{}, fmt.Errorf("%s: %w", agreement.DocID, err)
+		}
+		jobs = append(jobs, job{
+			scenario: scenarioID,
+			clause:   clauseID,
+			input: agents.CovenantInput{
+				ScenarioID:   scenarioID,
+				ClauseID:     clauseID,
+				Company:      agreement.Meta.CompanyName,
+				ClauseText:   clauseText,
+				ArticleText:  article.Text,
+				Definitions:  definitions,
+				AmendmentsIn: amendments,
+			},
+		})
+	}
+	return jobs, located{DocID: agreement.DocID, Article: article.Number, Chars: len(article.Text)}, nil
 }
 
 func definitionsText(text string) string {
@@ -250,14 +282,14 @@ func definitionsText(text string) string {
 	return s
 }
 
-func amendmentText(st *store.Store, idx *index.Index, scenarioID string) (string, error) {
+func amendmentText(docText func(string) (string, error), idx *index.Index, scenarioID string) (string, error) {
 	docs := idx.DocsFor(scenarioID, domain.DocAmendment)
 	if len(docs) == 0 {
 		return "", nil
 	}
 	var parts []string
 	for _, d := range docs {
-		text, err := st.DocText(d.DocID)
+		text, err := docText(d.DocID)
 		if err != nil {
 			return "", fmt.Errorf("load amendment %s: %w", d.DocID, err)
 		}
