@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -513,5 +514,51 @@ func TestDisclosedAmountFeedsATermThatIsNotAnAddBack(t *testing.T) {
 	}
 	if v.Status != domain.StatusBreach {
 		t.Errorf("status = %s, want BREACH", v.Status)
+	}
+}
+
+func TestRelatedPartyTermIsUnmeasurableWhenNoRowMatchesTheDossier(t *testing.T) {
+	in := &Inputs{
+		Facts: &domain.FactBase{Parties: []domain.Party{
+			{Name: "Quarry Holding LLP", VotingShare: dec("46.8"), Related: true},
+		}},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+			label("TXN-P1-0001", domain.CatOperatingCosts),
+		}},
+		Txns: []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Someone Else LLP", "-4204663.19")},
+	}
+	s := spec("related_party_payments / opex", "<=", "0.08",
+		domain.Term{Name: "related_party_payments", Kind: domain.TermRelatedPartyPayments,
+			Line: "платежи в пользу связанных сторон"},
+		term("opex", "Операционные расходы"))
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if v.Confidence > 0.2 {
+		t.Errorf("confidence = %v, want it dropped: the dossier names a related party and nothing matched", v.Confidence)
+	}
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "no ledger row is booked") }) {
+		t.Errorf("the trace must say the dossier went unmatched: %q", v.Trace)
+	}
+}
+
+func TestRelatedPartyTermStaysMeasurableWhenTheDossierNamesNobody(t *testing.T) {
+	in := &Inputs{
+		Facts:  &domain.FactBase{},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{label("TXN-P1-0001", domain.CatOperatingCosts)}},
+		Txns:   []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Someone Else LLP", "-1000")},
+	}
+	s := spec("related_party_payments", "<=", "500000",
+		domain.Term{Name: "related_party_payments", Kind: domain.TermRelatedPartyPayments,
+			Line: "платежи в пользу связанных сторон"})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if v.Confidence <= 0.2 {
+		t.Errorf("confidence = %v: a dossier with no related parties is an answer, not a gap", v.Confidence)
 	}
 }

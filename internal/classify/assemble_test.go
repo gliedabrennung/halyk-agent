@@ -479,3 +479,67 @@ func TestAssembleKeepsATxnIDThatAgreesWithTheDisclosure(t *testing.T) {
 		}
 	}
 }
+
+func TestAssembleReadsACorruptedPartyNameAsTheOnlyCloseCounterparty(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID:            "P1",
+		RelatedPartyThreshold: dec("40"),
+		Parties: []domain.Party{
+			{Name: "Вгее?. Quarry Holding", VotingShare: dec("46.8"), Related: true},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0001", "Breel Quarry Holding LLP", "Management advisory retainer", "-4204663.19"),
+		txn("TXN-P1-0002", "Coastal Freight Partners", "Office rent — north wing", "-1000"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "management advisory retainer", Category: domain.CatProfessionalService, Source: "rule"},
+		domain.Label{Pattern: "office rent", Category: domain.CatRent, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the reading must be reported once, got %v", warnings)
+	}
+
+	hit, _ := set.Lookup("TXN-P1-0001")
+	if !hit.RelatedParty {
+		t.Error("the only close counterparty must carry the related-party flag")
+	}
+	other, _ := set.Lookup("TXN-P1-0002")
+	if other.RelatedParty {
+		t.Error("a distant name must not be flagged")
+	}
+	if len(set.UnmatchedParties) != 0 {
+		t.Errorf("unmatched = %v, want none", set.UnmatchedParties)
+	}
+}
+
+func TestAssembleWillNotGuessBetweenTwoCloseCounterparties(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Parties:    []domain.Party{{Name: "Вгее?. Quarry Holding", VotingShare: dec("46.8"), Related: true}},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0001", "Breel Quarry Holding LLP", "Office rent — north wing", "-1000"),
+		txn("TXN-P1-0002", "Breem Quarry Holding LLP", "Office rent — south wing", "-2000"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "office rent", Category: domain.CatRent, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	for _, tl := range set.Txns {
+		if tl.RelatedParty {
+			t.Errorf("%s was flagged from an ambiguous name", tl.TxnID)
+		}
+	}
+	if len(set.UnmatchedParties) != 1 {
+		t.Fatalf("the party must stay unmatched, got %v", set.UnmatchedParties)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the miss must be reported, got %v", warnings)
+	}
+}

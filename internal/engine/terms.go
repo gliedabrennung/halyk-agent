@@ -119,7 +119,7 @@ func computeTerm(
 
 	switch {
 	case term.Kind == domain.TermRelatedPartyPayments:
-		return relatedPartyTerm(term, rows)
+		return relatedPartyTerm(term, in, rows)
 
 	case term.Kind == domain.TermGroupConsolidated:
 		return groupTerm(term, in, rows), nil
@@ -207,7 +207,7 @@ func mentionsOneOff(line string) bool {
 	return containsAny(line, "разов", "one-off", "one off", "add-back", "обратному добавлению")
 }
 
-func relatedPartyTerm(term domain.Term, rows []row) (termResult, error) {
+func relatedPartyTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 	res := termResult{Name: term.Name}
 	sum := decimal.Zero
 	for _, r := range rows {
@@ -218,9 +218,31 @@ func relatedPartyTerm(term domain.Term, rows []row) (termResult, error) {
 		res.Contributors = append(res.Contributors, r.txn.ID)
 	}
 	res.Value = sum.Abs()
+
+	if declared := declaredRelated(in); len(res.Contributors) == 0 && declared > 0 {
+		res.Unmeasurable = true
+		res.Trace = fmt.Sprintf(
+			"%s: the dossier names %d related part(ies), but no ledger row is booked to any of them",
+			term.Name, declared)
+		return res, nil
+	}
+
 	res.Trace = fmt.Sprintf("%s = %s over %d payment(s) to related parties",
 		term.Name, res.Value.StringFixed(2), len(res.Contributors))
 	return res, nil
+}
+
+func declaredRelated(in *Inputs) int {
+	if in == nil || in.Facts == nil {
+		return 0
+	}
+	n := 0
+	for _, p := range in.Facts.Parties {
+		if p.Related {
+			n++
+		}
+	}
+	return n
 }
 
 func ebitdaTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {

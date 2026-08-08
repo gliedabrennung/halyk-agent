@@ -407,15 +407,7 @@ func assemble(
 	txns []*domain.Txn,
 	byPattern map[string]domain.Label,
 ) (*domain.LabelSet, []string, error) {
-	related := make(map[string]domain.Party, len(fb.Parties))
-	for _, p := range fb.Parties {
-		if !p.Related {
-			continue
-		}
-		if key := domain.EntityKey(p.Name); key != "" {
-			related[key] = p
-		}
-	}
+	related, unresolved, aliases := relatedByCounterparty(fb, txns, scenarioID)
 
 	set := &domain.LabelSet{
 		ScenarioID: scenarioID,
@@ -464,15 +456,80 @@ func assemble(
 			set.UnmatchedParties = append(set.UnmatchedParties, p.Name)
 		}
 	}
+	set.UnmatchedParties = append(set.UnmatchedParties, unresolved...)
 	slices.Sort(set.RelatedParties)
 	slices.Sort(set.UnmatchedParties)
 
-	warnings := markAdjustments(scenarioID, fb, set, byID, byEntity, txns)
+	warnings := aliases
+	warnings = append(warnings, markAdjustments(scenarioID, fb, set, byID, byEntity, txns)...)
 	for _, name := range set.UnmatchedParties {
 		warnings = append(warnings, fmt.Sprintf(
 			"%s: related party %q has no ledger row under that name", scenarioID, name))
 	}
 	return set, warnings, nil
+}
+
+func relatedByCounterparty(
+	fb *domain.FactBase,
+	txns []*domain.Txn,
+	scenarioID string,
+) (map[string]domain.Party, []string, []string) {
+	ledger := make(map[string]string)
+	for _, t := range txns {
+		if t.ScenarioID != scenarioID {
+			continue
+		}
+		if key := domain.EntityKey(t.Counterparty); key != "" {
+			ledger[key] = t.Counterparty
+		}
+	}
+
+	related := make(map[string]domain.Party, len(fb.Parties))
+	var unplaced []domain.Party
+	for _, p := range fb.Parties {
+		if !p.Related {
+			continue
+		}
+		key := domain.EntityKey(p.Name)
+		switch {
+		case key == "":
+		case ledger[key] != "":
+			related[key] = p
+		default:
+			unplaced = append(unplaced, p)
+		}
+	}
+
+	var unresolved, warnings []string
+	for _, p := range unplaced {
+		key := nearestCounterparty(domain.EntityKey(p.Name), ledger, related)
+		if key == "" {
+			unresolved = append(unresolved, p.Name)
+			continue
+		}
+		related[key] = p
+		warnings = append(warnings, fmt.Sprintf(
+			"%s: no ledger row is booked to related party %q; %q is the only close name and is read as the same party",
+			scenarioID, p.Name, ledger[key]))
+	}
+	return related, unresolved, warnings
+}
+
+func nearestCounterparty(want string, ledger map[string]string, taken map[string]domain.Party) string {
+	if want == "" {
+		return ""
+	}
+	hit := ""
+	for key := range ledger {
+		if _, used := taken[key]; used || keySimilarity(want, key) < _nameSimilarity {
+			continue
+		}
+		if hit != "" {
+			return ""
+		}
+		hit = key
+	}
+	return hit
 }
 
 func markAdjustments(
@@ -588,9 +645,16 @@ func similarName(a, b string) bool {
 			return true
 		}
 	}
-	ra, rb := []rune(ka), []rune(kb)
+	return keySimilarity(ka, kb) >= _nameSimilarity
+}
+
+func keySimilarity(a, b string) float64 {
+	ra, rb := []rune(a), []rune(b)
 	longest := max(len(ra), len(rb))
-	return float64(longest-editDistance(ra, rb))/float64(longest) >= _nameSimilarity
+	if longest == 0 {
+		return 0
+	}
+	return float64(longest-editDistance(ra, rb)) / float64(longest)
 }
 
 func editDistance(a, b []rune) int {
