@@ -55,3 +55,27 @@ func TestReportOKOnlyWhenEveryCellHeld(t *testing.T) {
 		t.Error("one moved cell must not report OK")
 	}
 }
+
+func TestOnlyScenariosNarrowsTheComparisonBase(t *testing.T) {
+	base := map[string]answer{
+		"P4/6.1":  {status: "COMPLIANT", actual: dec("0.33")},
+		"P4/6.3":  {status: "BREACH", actual: dec("0.04")},
+		"P9/6.1":  {status: "BREACH", actual: dec("0.22")},
+		"P10/6.1": {status: "COMPLIANT", actual: dec("0.24")},
+		"B1/6.2":  {status: "COMPLIANT", actual: dec("1284663.42")},
+	}
+
+	got := onlyScenarios(base, []string{"P4", "P9"})
+	if len(got) != 3 {
+		t.Fatalf("kept %d cells, want the 3 belonging to P4 and P9: %v", len(got), got)
+	}
+	for key := range got {
+		if key != "P4/6.1" && key != "P4/6.3" && key != "P9/6.1" {
+			t.Errorf("%s does not belong to the probed scenarios", key)
+		}
+	}
+	// P10 не должен попасть из-за общего префикса с P1.
+	if _, ok := onlyScenarios(base, []string{"P1"})["P10/6.1"]; ok {
+		t.Error("P10 matched a probe of P1")
+	}
+}

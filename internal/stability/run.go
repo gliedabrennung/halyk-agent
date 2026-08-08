@@ -71,7 +71,14 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(opts.Only) > 0 {
+		baseline = onlyScenarios(baseline, opts.Only)
+	}
 	if len(baseline) == 0 {
+		if len(opts.Only) > 0 {
+			return nil, fmt.Errorf("no stored verdicts for %s; run `halyk-agent evaluate` first",
+				strings.Join(opts.Only, ", "))
+		}
 		return nil, fmt.Errorf("no verdicts to compare against; run `halyk-agent evaluate` first")
 	}
 
@@ -137,6 +144,19 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	})
 	rep.Duration = time.Since(start)
 	return rep, nil
+}
+
+// onlyScenarios оставляет в базе сравнения те ячейки, которые проба и правда переизвлекает.
+// Без этого `--only` показывал непройденных заёмщиков как «not answered» и считал долю
+// стабильных ячеек от всего шаблона: шесть сошедшихся из шести выглядели как 6 из 36.
+func onlyScenarios(baseline map[string]answer, only []string) map[string]answer {
+	out := make(map[string]answer, len(baseline))
+	for key, a := range baseline {
+		if scn, _, _ := strings.Cut(key, "/"); slices.Contains(only, scn) {
+			out[key] = a
+		}
+	}
+	return out
 }
 
 func onePass(ctx context.Context, opts Options, ns string) (map[string]answer, error) {
