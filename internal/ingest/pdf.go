@@ -44,17 +44,25 @@ func HasTesseract() bool {
 	return err == nil
 }
 
-func ExtractText(ctx context.Context, pdfPath string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, binPDFToText, "-layout", "-enc", "UTF-8", pdfPath, "-")
-
+// run выполняет внешнюю утилиту и возвращает её stdout; stderr уходит в текст ошибки.
+func run(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("pdftotext %s: %w: %s", filepath.Base(pdfPath), err, strings.TrimSpace(errBuf.String()))
+		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(errBuf.String()))
+	}
+	return out.String(), nil
+}
+
+func ExtractText(ctx context.Context, pdfPath string) ([]string, error) {
+	out, err := run(ctx, binPDFToText, "-layout", "-enc", "UTF-8", pdfPath, "-")
+	if err != nil {
+		return nil, fmt.Errorf("pdftotext %s: %w", filepath.Base(pdfPath), err)
 	}
 
-	pages := strings.Split(out.String(), "\f")
+	pages := strings.Split(out, "\f")
 
 	if n := len(pages); n > 0 && strings.TrimSpace(pages[n-1]) == "" {
 		pages = pages[:n-1]
@@ -81,12 +89,9 @@ func RenderPagePNG(ctx context.Context, pdfPath string, page, dpi int, cacheDir 
 	}
 
 	prefix := filepath.Join(dir, fmt.Sprintf("tmp-p%04d-%d", page, dpi))
-	cmd := exec.CommandContext(ctx, binPDFToPPM, "-png", "-r", fmt.Sprint(dpi),
-		"-f", fmt.Sprint(page), "-l", fmt.Sprint(page), pdfPath, prefix)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("pdftoppm %s p%d: %w: %s", docID, page, err, strings.TrimSpace(errBuf.String()))
+	if _, err := run(ctx, binPDFToPPM, "-png", "-r", fmt.Sprint(dpi),
+		"-f", fmt.Sprint(page), "-l", fmt.Sprint(page), pdfPath, prefix); err != nil {
+		return nil, fmt.Errorf("pdftoppm %s p%d: %w", docID, page, err)
 	}
 
 	matches, err := filepath.Glob(prefix + "*.png")
@@ -123,14 +128,11 @@ func OCRPage(ctx context.Context, pdfPath string, page int, cacheDir string) (st
 	}
 	tmp.Close()
 
-	cmd := exec.CommandContext(ctx, binTesseract, tmp.Name(), "stdout", "-l", ocrLanguages, "--psm", "6")
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("tesseract %s p%d: %w: %s", filepath.Base(pdfPath), page, err, strings.TrimSpace(errBuf.String()))
+	out, err := run(ctx, binTesseract, tmp.Name(), "stdout", "-l", ocrLanguages, "--psm", "6")
+	if err != nil {
+		return "", fmt.Errorf("tesseract %s p%d: %w", filepath.Base(pdfPath), page, err)
 	}
-	return out.String(), nil
+	return out, nil
 }
 
 func DocIDFromPath(p string) string {
