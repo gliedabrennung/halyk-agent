@@ -372,9 +372,9 @@ func newRunCmd(app *App) *cobra.Command {
 
 			stages := []runStage{
 				{name: "triage", llm: true, fn: func(log *slog.Logger) error {
-					if err := app.Cfg.RequireAPIKey(); err != nil {
-						return fmt.Errorf("%w: %w", errNoUsableOutput, err)
-					}
+					// Ключ здесь намеренно не требуется: кэш ответов отдаётся и без него,
+					// поэтому повторный прогон восстанавливает стадию бесплатно. Промах кэша
+					// без ключа деградирует документ — сети это не касается.
 					rep, err := index.Run(cmd.Context(), index.Options{
 						Cfg: app.Cfg, Store: app.Store, Log: log,
 						Client: client.WithLogger(log),
