@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -330,37 +331,48 @@ func newReportCmd(app *App) *cobra.Command {
 	return cmd
 }
 
+// errNoUsableOutput помечает стадию, после которой продолжать модельные стадии бессмысленно:
+// они ничего не смогут прочитать и только сожгут квоту.
+var errNoUsableOutput = errors.New("nothing the next stages can use")
+
+type runStage struct {
+	name string
+	llm  bool
+	fn   func(log *slog.Logger) error
+}
+
 func newRunCmd(app *App) *cobra.Command {
 	var skipLLM bool
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run every stage in order",
-		Long: "Runs the pipeline end to end; a failing stage aborts the run with an explicit\n" +
-			"error. --deterministic runs only the stages that need no model, which leaves\n" +
-			"the cells the engine cannot answer on the baseline placeholder.",
+		Long: "Runs the pipeline end to end and always finishes by writing out/submission.json:\n" +
+			"a stage that fails degrades the cells it feeds instead of aborting the run, because an\n" +
+			"unanswered cell scores exactly like a wrong one. Cells the engine could not compute keep\n" +
+			"the baseline placeholder. The exit code is non-zero when anything degraded, and the\n" +
+			"closing summary names every stage that did. --deterministic runs only the stages that\n" +
+			"need no model, which leaves every cell on the placeholder.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := app.Cfg.CheckDataset(); err != nil {
 				return err
 			}
 			client := llm.New(app.Cfg, app.Store, app.Log)
-			stages := []struct {
-				name string
-				llm  bool
-				fn   func(log *slog.Logger) error
-			}{
-				{name: "ingest", fn: func(log *slog.Logger) error {
-					rep, err := ingest.Run(cmd.Context(), ingest.Options{
-						Cfg: app.Cfg, Store: app.Store, Log: log,
-					})
-					if err != nil {
-						return err
-					}
-					fmt.Print(rep.String())
-					return nil
-				}},
+
+			// ingest — единственная критичная стадия: без леджера и шаблона submission не собрать.
+			ingestLog := app.stageLog("ingest")
+			ingestLog.Info("stage start")
+			ingested, err := ingest.Run(cmd.Context(), ingest.Options{
+				Cfg: app.Cfg, Store: app.Store, Log: ingestLog,
+			})
+			if err != nil {
+				return fmt.Errorf("stage ingest: %w", err)
+			}
+			fmt.Print(ingested.String())
+
+			stages := []runStage{
 				{name: "triage", llm: true, fn: func(log *slog.Logger) error {
 					if err := app.Cfg.RequireAPIKey(); err != nil {
-						return err
+						return fmt.Errorf("%w: %w", errNoUsableOutput, err)
 					}
 					rep, err := index.Run(cmd.Context(), index.Options{
 						Cfg: app.Cfg, Store: app.Store, Log: log,
@@ -370,6 +382,9 @@ func newRunCmd(app *App) *cobra.Command {
 						return err
 					}
 					fmt.Print(rep.String())
+					if rep.Resolved == 0 {
+						return fmt.Errorf("%w: no document was resolved to a borrower", errNoUsableOutput)
+					}
 					if rep.Coverage != "" {
 						return fmt.Errorf("%s", rep.Coverage)
 					}
@@ -384,6 +399,13 @@ func newRunCmd(app *App) *cobra.Command {
 						return err
 					}
 					fmt.Print(rep.String())
+					if rep.Specs == 0 {
+						return fmt.Errorf("%w: not a single covenant specification was extracted", errNoUsableOutput)
+					}
+					if !rep.OK() {
+						return fmt.Errorf("%d of %d covenant cells have no specification",
+							len(rep.Failed), rep.Expected)
+					}
 					return nil
 				}},
 				{name: "facts", llm: true, fn: func(log *slog.Logger) error {
@@ -395,6 +417,9 @@ func newRunCmd(app *App) *cobra.Command {
 						return err
 					}
 					fmt.Print(rep.String())
+					if rep.Scenarios == 0 {
+						return fmt.Errorf("%w: no borrower got a fact base", errNoUsableOutput)
+					}
 					if !rep.OK() {
 						return fmt.Errorf("%d borrowers have no fact base", len(rep.Failed))
 					}
@@ -409,6 +434,9 @@ func newRunCmd(app *App) *cobra.Command {
 						return err
 					}
 					fmt.Print(rep.String())
+					if len(rep.Rows) == 0 {
+						return fmt.Errorf("%w: no borrower got a labelled ledger", errNoUsableOutput)
+					}
 					if !rep.OK() {
 						return fmt.Errorf("%d transactions have no category", rep.Unknown)
 					}
@@ -429,25 +457,9 @@ func newRunCmd(app *App) *cobra.Command {
 					}
 					return nil
 				}},
-				{name: "submit", fn: func(log *slog.Logger) error {
-					res, err := submit.Run(submit.Options{Cfg: app.Cfg, Store: app.Store, Log: log})
-					if err != nil {
-						return err
-					}
-					fmt.Printf("wrote %s (%d cells: %d engine, %d baseline)\n",
-						res.Path, res.Cells, res.FromEngine, res.FromBaseline)
-					return nil
-				}},
-				{name: "report", fn: func(log *slog.Logger) error {
-					rep, err := report.Run(report.Options{Cfg: app.Cfg, Store: app.Store, Log: log})
-					if err != nil {
-						return err
-					}
-					fmt.Print(rep.String())
-					return nil
-				}},
 			}
 
+			var degraded []string
 			for _, st := range stages {
 				log := app.stageLog(st.name)
 				if skipLLM && st.llm {
@@ -455,17 +467,46 @@ func newRunCmd(app *App) *cobra.Command {
 					continue
 				}
 				log.Info("stage start")
-				if err := st.fn(log); err != nil {
-					if skipLLM && st.name == "evaluate" {
-						log.Warn("the engine has nothing to read without the model stages; falling through to the baseline submission",
-							"err", err)
-						continue
-					}
-					return fmt.Errorf("stage %s: %w", st.name, err)
+				err := st.fn(log)
+				if err == nil {
+					continue
+				}
+				log.Error("stage degraded; the run still finishes with a submission", "err", err)
+				degraded = append(degraded, fmt.Sprintf("%s: %v", st.name, err))
+				if errors.Is(err, errNoUsableOutput) {
+					log.Error("skipping the remaining model stages", "reason", "they would read nothing")
+					break
 				}
 			}
 
-			return validateSubmission(app)
+			// Отсюда и до конца — безусловно. По условию задачи пустая ячейка стоит ровно
+			// столько же, сколько неверная, поэтому файл должен появиться при любом исходе.
+			submitLog := app.stageLog("submit")
+			submitLog.Info("stage start")
+			res, err := submit.Run(submit.Options{Cfg: app.Cfg, Store: app.Store, Log: submitLog})
+			if err != nil {
+				return fmt.Errorf("stage submit: %w", err)
+			}
+			fmt.Printf("wrote %s (%d cells: %d engine, %d baseline)\n",
+				res.Path, res.Cells, res.FromEngine, res.FromBaseline)
+
+			reportLog := app.stageLog("report")
+			reportLog.Info("stage start")
+			if rep, err := report.Run(report.Options{Cfg: app.Cfg, Store: app.Store, Log: reportLog}); err != nil {
+				reportLog.Error("stage degraded; the submission is unaffected", "err", err)
+				degraded = append(degraded, fmt.Sprintf("report: %v", err))
+			} else {
+				fmt.Print(rep.String())
+			}
+
+			if err := validateSubmission(app); err != nil {
+				return err
+			}
+			if len(degraded) > 0 {
+				return fmt.Errorf("%s is written and scoreable, but %d stage(s) degraded:\n  - %s",
+					res.Path, len(degraded), strings.Join(degraded, "\n  - "))
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&skipLLM, "deterministic", false, "run only the stages that need no model (produces a baseline submission)")
