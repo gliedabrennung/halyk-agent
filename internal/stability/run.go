@@ -1,10 +1,11 @@
 package stability
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,7 +77,12 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 
 	rep := &Report{Passes: opts.Passes, Cells: len(baseline)}
 	moved := make(map[string][]string)
-	what := make(map[string]map[string]bool)
+	what := make(map[string][]string)
+	addWhat := func(key, w string) {
+		if !slices.Contains(what[key], w) {
+			what[key] = append(what[key], w)
+		}
+	}
 
 	for pass := 1; pass <= opts.Passes; pass++ {
 		ns := fmt.Sprintf(":probe%d", pass)
@@ -97,7 +103,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			g, ok := got[key]
 			if !ok {
 				moved[key] = append(moved[key], "not answered")
-				addWhat(what, key, "missing")
+				addWhat(key, "missing")
 				continue
 			}
 			diff := differences(base, g)
@@ -106,7 +112,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			}
 			moved[key] = append(moved[key], g.String())
 			for _, d := range diff {
-				addWhat(what, key, d)
+				addWhat(key, d)
 			}
 		}
 	}
@@ -124,11 +130,10 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			What:     joinWhat(what[key]),
 		})
 	}
-	sort.Slice(rep.Rows, func(i, j int) bool {
-		if rep.Rows[i].ScenarioID != rep.Rows[j].ScenarioID {
-			return rep.Rows[i].ScenarioID < rep.Rows[j].ScenarioID
-		}
-		return rep.Rows[i].ClauseID < rep.Rows[j].ClauseID
+	slices.SortFunc(rep.Rows, func(a, b Row) int {
+		return cmp.Or(
+			cmp.Compare(a.ScenarioID, b.ScenarioID),
+			cmp.Compare(a.ClauseID, b.ClauseID))
 	})
 	rep.Duration = time.Since(start)
 	return rep, nil
@@ -225,17 +230,11 @@ func within(a, b decimal.Decimal) bool {
 	return a.Sub(b).Abs().Div(a.Abs()).LessThanOrEqual(_actualTolerance)
 }
 
-func addWhat(m map[string]map[string]bool, key, what string) {
-	if m[key] == nil {
-		m[key] = make(map[string]bool)
-	}
-	m[key][what] = true
-}
-
-func joinWhat(set map[string]bool) string {
+// joinWhat печатает виды расхождений в фиксированном порядке, а не в порядке появления.
+func joinWhat(set []string) string {
 	var out []string
 	for _, k := range []string{"status", "actual", "evidence", "missing"} {
-		if set[k] {
+		if slices.Contains(set, k) {
 			out = append(out, k)
 		}
 	}
