@@ -11,11 +11,47 @@
 
 Результат — `out/submission.json` по форме `data/submission_template.json`.
 
+## Quick Start
+
+Всё, что нужно снаружи, — датасет в `data/`, ключ в `.env` и Docker. Poppler и tesseract с
+языками `rus`/`eng`/`kaz` уже внутри образа.
+
+```bash
+cp .env.example .env      # и вписать LLM_API_KEY, TEAM, CONTACT_EMAIL
+docker compose run --rm agent run
+```
+
+На выходе — `out/submission.json`, `out/report.pdf` и остальное в `out/`.
+
+Отдельная стадия вместо всего конвейера:
+
+```bash
+docker compose run --rm agent evaluate
+docker compose run --rm agent score
+```
+
+Тома в `compose.yaml` не декоративные: `.cache/` держит кэш ответов модели, и без него каждый
+прогон уходит в сеть заново — это ~330 вызовов и вся суточная норма free tier. `data/`
+монтируется только на чтение.
+
+Без compose:
+
+```bash
+docker build -t halyk-agent .
+docker run --rm --env-file .env \
+  -v "$PWD/data:/app/data:ro" \
+  -v "$PWD/.cache:/app/.cache" \
+  -v "$PWD/artifacts:/app/artifacts" \
+  -v "$PWD/out:/app/out" \
+  -v "$PWD/logs:/app/logs" \
+  halyk-agent run
+```
+
 ## Запуск
 
-Сборка и полный прогон — две команды. Что должно лежать в `data/`, что нужно установить и что
-задать в `.env`, описано ниже: [вход](#что-нужно-на-входе), [машина](#что-нужно-на-машине),
-[настройка](#настройка).
+Без контейнера — сборка и полный прогон в две команды. Что должно лежать в `data/`, что нужно
+установить и что задать в `.env`, описано ниже: [вход](#что-нужно-на-входе),
+[машина](#что-нужно-на-машине), [настройка](#настройка).
 
 ```bash
 go build -o bin/halyk-agent ./cmd/halyk-agent

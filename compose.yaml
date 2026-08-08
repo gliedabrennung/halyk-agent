@@ -1,0 +1,13 @@
+services:
+  agent:
+    build: .
+    image: halyk-agent
+    env_file: .env
+    working_dir: /app
+    volumes:
+      - ./data:/app/data:ro
+      - ./.cache:/app/.cache
+      - ./artifacts:/app/artifacts
+      - ./out:/app/out
+      - ./logs:/app/logs
+    command: run
