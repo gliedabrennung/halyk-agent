@@ -137,11 +137,7 @@ func scaledFraction(got, want float64) float64 {
 		return 0
 	}
 	e := math.Abs(got-want) / math.Abs(want)
-	f := 1 - e/zeroAtError
-	if f < 0 {
-		return 0
-	}
-	return f
+	return max(1-e/zeroAtError, 0)
 }
 
 func (r *ScoreReport) String() string {

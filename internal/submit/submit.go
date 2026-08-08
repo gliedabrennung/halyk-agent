@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/config"
@@ -82,7 +83,7 @@ func Run(opts Options) (*Result, error) {
 }
 
 func fill(tpl *domain.Template, verdicts []domain.Verdict, cfg *config.Config) ([]byte, error) {
-	raw := append([]byte(nil), tpl.Raw...)
+	raw := slices.Clone(tpl.Raw)
 	var err error
 
 	for key, value := range map[string]string{

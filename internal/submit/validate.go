@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 	"github.com/tidwall/gjson"
 )
+
+// Поля ячейки шаблона: ровно эти три, ни больше ни меньше.
+var _cellFields = []string{"status", "actual", "evidence_txn_id"}
 
 type Problem struct {
 	Where  string `json:"where"`
@@ -128,10 +132,8 @@ func Validate(submissionPath string, tpl *domain.Template, ledger LedgerIndex) (
 }
 
 func validateCell(rep *ValidationReport, where, scenarioID string, cell gjson.Result, ledger LedgerIndex) {
-
-	allowed := map[string]bool{"status": true, "actual": true, "evidence_txn_id": true}
 	cell.ForEach(func(k, _ gjson.Result) bool {
-		if !allowed[k.String()] {
+		if !slices.Contains(_cellFields, k.String()) {
 			rep.Problems = append(rep.Problems, Problem{where + "." + k.String(), "field is not in the template"})
 		}
 		return true
