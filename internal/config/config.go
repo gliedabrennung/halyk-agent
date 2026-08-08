@@ -37,6 +37,8 @@ type Config struct {
 	RequestsPerMinute int
 	RequestsPerHour   int
 
+	RequestTimeout time.Duration
+
 	LogLevel string
 }
 
@@ -106,6 +108,7 @@ func Load() (*Config, error) {
 		MaxConcurrency:    envInt("MAX_CONCURRENCY", 4),
 		RequestsPerMinute: envInt("RPM", 14),
 		RequestsPerHour:   envInt("RPH", 0),
+		RequestTimeout:    time.Duration(envInt("REQUEST_TIMEOUT", 60)) * time.Second,
 		LogLevel:          env("LOG_LEVEL", "info"),
 	}
 	if err := validReasoningEffort(c.ReasoningEffort); err != nil {

@@ -75,7 +75,6 @@ func NewWithNonce(cfg *config.Config, st *store.Store, log *slog.Logger, nonce s
 }
 
 func New(cfg *config.Config, st *store.Store, log *slog.Logger) *Client {
-	const requestTimeout = 5 * time.Minute
 	return &Client{
 		cfg: cfg,
 		st:  st,
@@ -83,7 +82,7 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger) *Client {
 		shared: &shared{
 			sem:         make(chan struct{}, cfg.MaxConcurrency),
 			minInterval: cfg.CallInterval(),
-			http:        &http.Client{Timeout: requestTimeout},
+			http:        &http.Client{Timeout: cfg.RequestTimeout},
 		},
 	}
 }
@@ -197,9 +196,6 @@ func isRetryable(err error, attempt int) (time.Duration, bool) {
 		}
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return 0, false
-	}
 	var netErr *transportError
 	if errors.As(err, &netErr) {
 		return growing, true

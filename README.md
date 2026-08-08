@@ -172,6 +172,7 @@ MODEL=gemini-3.5-flash-lite
 | `RPM` | запросов в минуту | `14` |
 | `RPH` | запросов в час; `0` — окна нет | `0` |
 | `MAX_CONCURRENCY` | параллельных вызовов | `4` |
+| `REQUEST_TIMEOUT` | секунд на один вызов; по истечении обрыв и повтор | `60` |
 | `TEAM` | поле `team` в submission | `halyk-agent` |
 | `CONTACT_EMAIL` | поле `contact_email` | — |
 | `DATA_DIR` | каталог датасета | `./data` |

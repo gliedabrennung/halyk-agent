@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -183,5 +185,37 @@ func TestExhaustedFlagSurvivesTheMarkerList(t *testing.T) {
 	}
 	if _, retry := isRetryable(silent, 1); retry {
 		t.Error("an allowance marked spent must not be retried")
+	}
+}
+
+func TestATimedOutRequestIsRetried(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+	}))
+	defer slow.Close()
+
+	client := &http.Client{Timeout: 20 * time.Millisecond}
+	_, err := client.Get(slow.URL)
+	if err == nil {
+		t.Fatal("the request was expected to time out")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a client timeout no longer reports a deadline: %v", err)
+	}
+
+	delay, retryable := isRetryable(&transportError{err}, 1)
+	if !retryable {
+		t.Error("our own request budget running out must be retried, not dropped")
+	}
+	if delay <= 0 {
+		t.Errorf("delay = %v, want a growing back-off", delay)
+	}
+}
+
+func TestACancelledRunIsNotRetried(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, retryable := isRetryable(ctx.Err(), 1); retryable {
+		t.Error("a cancelled run must stop, not retry")
 	}
 }
