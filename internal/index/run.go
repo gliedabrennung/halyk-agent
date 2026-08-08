@@ -45,6 +45,7 @@ type Report struct {
 	Superseded  []string       `json:"superseded,omitempty"`
 	PerScenario []ScenarioDocs `json:"per_scenario"`
 	LowConf     []string       `json:"low_confidence,omitempty"`
+	Failed      []string       `json:"failed,omitempty"`
 	Coverage    string         `json:"coverage_error,omitempty"`
 	IndexPath   string         `json:"index_path"`
 }
@@ -95,15 +96,34 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	entries := make([]Entry, len(docs))
 	var mu sync.Mutex
 	done := 0
+	var failed []string
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(opts.Cfg.MaxConcurrency)
 
 	for i, doc := range docs {
 		g.Go(func() error {
+			// Сбой одного документа не отменяет триаж остальных: документ остаётся в индексе
+			// нераспознанным. Недостающий договор поймает CheckCoverage.
+			degrade := func(err error) error {
+				if gctx.Err() != nil {
+					return gctx.Err()
+				}
+				opts.Log.Error("document triage failed; left unresolved", "doc", doc.ID, "err", err)
+				mu.Lock()
+				failed = append(failed, fmt.Sprintf("%s: %v", doc.ID, err))
+				mu.Unlock()
+				entries[i] = Entry{
+					DocID: doc.ID, Path: doc.Path, Pages: doc.Pages,
+					DocType: domain.DocOther,
+					Notes:   []string{"triage failed: " + err.Error()},
+				}
+				return nil
+			}
+
 			text, err := opts.Store.DocText(doc.ID)
 			if err != nil {
-				return fmt.Errorf("load text %s: %w", doc.ID, err)
+				return degrade(fmt.Errorf("load text: %w", err))
 			}
 			scan := ScanText(text)
 
@@ -115,18 +135,18 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			}
 
 			if scan.Chars < 100 && ingest.IsPDF(doc.Path) {
-				text, pages, err := ocrPages(gctx, doc, opts.Cfg.CacheDir)
+				ocrText, pages, err := ocrPages(gctx, doc, opts.Cfg.CacheDir)
 				if err != nil {
-					return fmt.Errorf("ocr %s: %w", doc.ID, err)
+					return degrade(fmt.Errorf("ocr: %w", err))
 				}
-				in.OCRText = truncate(text, maxTriageChars)
+				in.OCRText = truncate(ocrText, maxTriageChars)
 				opts.Log.Info("document has no text layer; reading its pages with OCR",
-					"doc", doc.ID, "pages", pages, "chars", len(text))
+					"doc", doc.ID, "pages", pages, "chars", len(ocrText))
 			}
 
 			res, err := agents.Triage(gctx, opts.Client, in)
 			if err != nil {
-				return err
+				return degrade(err)
 			}
 
 			entries[i] = Entry{
@@ -175,6 +195,8 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	rep := buildReport(idx, tpl.Scenarios)
 	rep.Duration = time.Since(start)
 	rep.IndexPath = indexPath
+	slices.Sort(failed)
+	rep.Failed = failed
 
 	if err := idx.CheckCoverage(tpl.Scenarios, clauses); err != nil {
 		rep.Coverage = err.Error()
@@ -307,6 +329,12 @@ func (r *Report) String() string {
 	fmt.Fprintf(&b, "\n  superseded    %d\n", len(r.Superseded))
 	if len(r.LowConf) > 0 {
 		fmt.Fprintf(&b, "  low confidence %d: %s\n", len(r.LowConf), strings.Join(r.LowConf, " "))
+	}
+	if len(r.Failed) > 0 {
+		fmt.Fprintf(&b, "  FAILED %d documents, left unresolved:\n", len(r.Failed))
+		for _, f := range r.Failed {
+			fmt.Fprintf(&b, "    %s\n", f)
+		}
 	}
 
 	fmt.Fprintf(&b, "\nPER BORROWER (effective documents only)\n")
