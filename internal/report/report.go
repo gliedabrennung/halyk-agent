@@ -517,12 +517,13 @@ func unitSuffix(unit string) string {
 func termLines(s *domain.CovenantSpec) string {
 	var lines []string
 	for _, t := range s.Terms {
+		if t.Kind == domain.TermConstant {
+			lines = append(lines, fmt.Sprintf("%s = %s", t.Name, t.Constant.String()))
+			continue
+		}
 		line := fmt.Sprintf("%s = %s", t.Name, t.Kind)
 		if t.Line != "" {
 			line += fmt.Sprintf(" %q", t.Line)
-		}
-		if t.Kind == domain.TermConstant {
-			line = fmt.Sprintf("%s = %s", t.Name, t.Constant.String())
 		}
 		lines = append(lines, line)
 	}

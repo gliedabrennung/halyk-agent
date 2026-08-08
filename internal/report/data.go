@@ -3,7 +3,7 @@ package report
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -109,22 +109,18 @@ func (c *cell) Disputed() bool {
 	if c.Verdict == nil {
 		return false
 	}
-	for _, line := range c.Verdict.Trace {
-		if strings.HasPrefix(line, "critic disagrees") {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(c.Verdict.Trace, func(l string) bool {
+		return strings.HasPrefix(l, "critic disagrees")
+	})
 }
 
+// Critic возвращает реплику критика из трассы, Trace — всё остальное.
 func (c *cell) Critic() string {
 	if c.Verdict == nil {
 		return ""
 	}
-	for _, line := range c.Verdict.Trace {
-		if strings.HasPrefix(line, "critic") {
-			return line
-		}
+	if i := slices.IndexFunc(c.Verdict.Trace, isCriticLine); i >= 0 {
+		return c.Verdict.Trace[i]
 	}
 	return ""
 }
@@ -135,13 +131,14 @@ func (c *cell) Trace() []string {
 	}
 	var out []string
 	for _, line := range c.Verdict.Trace {
-		if strings.HasPrefix(line, "critic") {
-			continue
+		if !isCriticLine(line) {
+			out = append(out, line)
 		}
-		out = append(out, line)
 	}
 	return out
 }
+
+func isCriticLine(s string) bool { return strings.HasPrefix(s, "critic") }
 
 func collect(opts Options) (*dossier, error) {
 	cfg := opts.Cfg
@@ -237,30 +234,36 @@ func collectBorrower(
 	var warnings []string
 	b := &borrower{ScenarioID: scn, Accounts: led.ScnToAccount[scn], Txns: len(led.ByScenario[scn])}
 
+	// Отчёт рисуется по тому, что есть: недостающая стадия — предупреждение, а не отказ.
+	load := func(kind, what, stage string, dst any) bool {
+		ok, err := opts.Store.GetArtifact(kind, scn, dst)
+		switch {
+		case err != nil:
+			warnings = append(warnings, fmt.Sprintf("%s: %s unreadable: %v", scn, what, err))
+			return false
+		case !ok:
+			warnings = append(warnings, fmt.Sprintf("%s: no %s (run `halyk-agent %s`)", scn, what, stage))
+			return false
+		}
+		return true
+	}
+
 	var fb domain.FactBase
-	if ok, err := opts.Store.GetArtifact(facts.ArtifactKind, scn, &fb); err == nil && ok {
+	if load(facts.ArtifactKind, "fact base", "facts", &fb) {
 		b.Company = fb.Company
 		b.Related = fb.RelatedNames()
 		b.RelatedThreshold = fb.RelatedPartyThreshold
 		b.Adjustments = fb.Adjustments
 		b.FX = fb.FXRates
 		b.FactNotes = fb.Notes
-	} else if err != nil {
-		warnings = append(warnings, fmt.Sprintf("%s: fact base unreadable: %v", scn, err))
-	} else {
-		warnings = append(warnings, scn+": no fact base (run `halyk-agent facts`)")
 	}
 
 	var labels domain.LabelSet
-	if ok, err := opts.Store.GetArtifact(classify.ArtifactKind, scn, &labels); err == nil && ok {
+	if load(classify.ArtifactKind, "row labels", "classify", &labels) {
 		if b.Company == "" {
 			b.Company = labels.Company
 		}
 		b.Totals = categoryTotals(&labels)
-	} else if err != nil {
-		warnings = append(warnings, fmt.Sprintf("%s: labels unreadable: %v", scn, err))
-	} else {
-		warnings = append(warnings, scn+": no row labels (run `halyk-agent classify`)")
 	}
 
 	if idx != nil {
@@ -274,14 +277,10 @@ func collectBorrower(
 
 	specs := map[string]*domain.CovenantSpec{}
 	var list []*domain.CovenantSpec
-	if ok, err := opts.Store.GetArtifact(covenants.ArtifactKind, scn, &list); err == nil && ok {
+	if load(covenants.ArtifactKind, "covenant specifications", "covenants", &list) {
 		for _, s := range list {
 			specs[s.ClauseID] = s
 		}
-	} else if err != nil {
-		warnings = append(warnings, fmt.Sprintf("%s: covenant specifications unreadable: %v", scn, err))
-	} else {
-		warnings = append(warnings, scn+": no covenant specifications (run `halyk-agent covenants`)")
 	}
 
 	for _, clause := range tpl.ClausesFor(scn) {
@@ -332,8 +331,8 @@ func categoryTotals(labels *domain.LabelSet) []categoryTotal {
 	for cat, amount := range labels.Totals {
 		out = append(out, categoryTotal{Category: cat, Amount: amount, Txns: counts[cat]})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Amount.Abs().GreaterThan(out[j].Amount.Abs())
+	slices.SortFunc(out, func(a, b categoryTotal) int {
+		return b.Amount.Abs().Cmp(a.Amount.Abs())
 	})
 	return out
 }
