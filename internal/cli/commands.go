@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -589,6 +590,10 @@ func newStatusCmd(app *App) *cobra.Command {
 			for _, d := range docs {
 				pages += d.Pages
 			}
+			verdicts, err := app.Store.LoadVerdicts()
+			if err != nil {
+				return err
+			}
 			n, tin, tout, err := app.Store.CacheStats()
 			if err != nil {
 				return err
@@ -597,10 +602,23 @@ func newStatusCmd(app *App) *cobra.Command {
 			fmt.Printf("database:      %s\n", app.Cfg.DBPath)
 			fmt.Printf("transactions:  %d\n", len(txns))
 			fmt.Printf("documents:     %d (%d pages)\n", len(docs), pages)
+			fmt.Printf("verdicts:      %d cells computed by the engine\n", len(verdicts))
+			fmt.Printf("submission:    %s\n", submissionAge(app.Cfg.SubmissionPath()))
 			fmt.Printf("llm cache:     %d responses, %d in / %d out tokens\n", n, tin, tout)
 			return nil
 		},
 	}
+}
+
+// submissionAge отвечает на вопрос «этот файл из текущего прогона или лежит с прошлого раза».
+func submissionAge(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "not written yet (run `halyk-agent submit`)"
+	}
+	return fmt.Sprintf("%s, written %s (%s ago)", path,
+		info.ModTime().Format("2006-01-02 15:04:05"),
+		time.Since(info.ModTime()).Round(time.Second))
 }
 
 func newLLMCheckCmd(app *App) *cobra.Command {

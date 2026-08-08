@@ -132,7 +132,7 @@ func cover(r *renderer, d *dossier) {
 	r.space(4)
 
 	r.kv("generated", d.Generated.Format("2006-01-02 15:04:05 UTC"))
-	r.kv("submission", d.SubmissionPath)
+	r.kv("submission", submissionLabel(d))
 	r.kv("corpus", fmt.Sprintf("%d documents, %d pages, %d ledger transactions",
 		d.Corpus.Documents, d.Corpus.Pages, d.Corpus.Txns))
 	r.kv("engine cells", fmt.Sprintf("%d of %d answered by the deterministic engine",
@@ -400,8 +400,17 @@ func appendix(r *renderer, d *dossier) {
 		"order, halyk-agent evaluate re-runs the engine alone, and halyk-agent report re-renders this " +
 		"file from the stored verdicts and the submission. Model responses are cached by prompt hash, " +
 		"so a re-run of an unchanged stage costs no calls.")
-	r.kv("submission", d.SubmissionPath)
+	r.kv("submission", submissionLabel(d))
 	r.kv("generated", d.Generated.Format(time.RFC3339))
+}
+
+// submissionLabel называет файл вместе со временем записи: отчёт рисуется по тому, что лежит
+// на диске, и по нему должно быть видно, из того ли он прогона.
+func submissionLabel(d *dossier) string {
+	if d.SubmissionAge.IsZero() {
+		return d.SubmissionPath
+	}
+	return fmt.Sprintf("%s  (written %s)", d.SubmissionPath, d.SubmissionAge.Format("2006-01-02 15:04:05 UTC"))
 }
 
 func statusColor(status string) rgb {

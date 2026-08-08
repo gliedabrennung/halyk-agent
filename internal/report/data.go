@@ -23,6 +23,7 @@ import (
 type dossier struct {
 	Generated      time.Time
 	SubmissionPath string
+	SubmissionAge  time.Time
 
 	Corpus    corpus
 	Borrowers []borrower
@@ -176,6 +177,9 @@ func collect(opts Options) (*dossier, error) {
 	d := &dossier{
 		Generated:      time.Now().UTC(),
 		SubmissionPath: path,
+	}
+	if info, err := os.Stat(path); err == nil {
+		d.SubmissionAge = info.ModTime().UTC()
 	}
 	d.Corpus.Txns = len(txns)
 	d.Corpus.Documents = len(docs)
