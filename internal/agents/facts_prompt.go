@@ -16,7 +16,7 @@ Return STRICT JSON:
   "adjustments": [
     {
       "kind": "reclassify | exclude_period | include_period | disclosed_amount | ledger_amount_fix | ebitda_add_back | no_change",
-      "txn_id": "TXN-P1-0045 if the disclosure names one, else empty",
+      "txn_id": "the transaction id the disclosure names, in the TXN-<scenario>-NNNN form given above; empty if it names none",
       "counterparty": "the counterparty named, else empty",
       "amount": "decimal string, no currency sign or separators; empty if the disclosure states none",
       "from_category": "the category the amount was originally booked to, else empty",
@@ -28,12 +28,12 @@ Return STRICT JSON:
     }
   ],
   "parties": [
-    {"name": "...", "voting_share": "23.4", "pledged_share": "87.6 if a collateral table gives this entity's pledged asset share, else empty",
+    {"name": "...", "voting_share": "44.7", "pledged_share": "63.9 if a collateral table gives this entity's pledged asset share, else empty",
      "relation": "affiliate|subsidiary|parent|", "status": "restricted|unrestricted| — only if stated in words", "source_doc": "...", "quote": "..."}
   ],
-  "related_party_threshold": "the voting share percentage at or above which a counterparty counts as related, e.g. 25.0; empty if the file states none",
-  "unrestricted_threshold": "the pledged-asset percentage BELOW which a subsidiary is outside the security and counts as unrestricted, e.g. 50.0; empty if the file states none",
-  "fx_rates": [{"currency": "EUR", "usd_rate": "1.16", "basis": "how the rate was established", "quote": "..."}],
+  "related_party_threshold": "the voting share percentage at or above which a counterparty counts as related, formatted like 47.5; empty if the file states none",
+  "unrestricted_threshold": "the pledged-asset percentage BELOW which a subsidiary is outside the security and counts as unrestricted, formatted like 62.5; empty if the file states none",
+  "fx_rates": [{"currency": "EUR", "usd_rate": "1.0725", "basis": "how the rate was established", "quote": "..."}],
   "notes": ["anything material you saw that does not fit above"],
   "confidence": 0.0
 }
@@ -54,23 +54,27 @@ Rules:
    with no items under it, emit no adjustments for it and add a note saying the section was
    present and empty. Never invent an item to fill it.
 
-4. THRESHOLD. The related-party threshold is stated in the compliance dossier ("Организации, в
-   которых Группа владеет 25.0% и более голосующих прав, признаются связанными сторонами").
-   It differs between borrowers. Take the number from THIS borrower's file. Do not assume.
+4. THRESHOLD. The compliance dossier states the voting share at or above which a counterparty
+   is a related party, in words of the form "организации, в которых Группа владеет N% и более
+   голосующих прав, признаются связанными сторонами". N differs between borrowers and is never
+   a round default. Copy the number printed in THIS borrower's file; if the file states none,
+   leave the field empty rather than supplying a customary figure.
 
 5. PARTIES. Transcribe every organisation in the ownership table with its voting share, whether
    or not it meets the threshold — a share below the threshold is evidence too. Do not decide
    relatedness yourself; just report the shares.
 
-5a. COLLATERAL COVERAGE. A dossier may carry a SECOND table ("Обеспечительное покрытие дочерних
-   организаций") giving the share of each subsidiary's assets pledged under the security
-   agreement, plus the percentage below which a subsidiary is outside the security perimeter and
-   therefore "unrestricted". That table names entities the ownership table does not, and it is
-   usually an OCR page. Transcribe those entities too, with "pledged_share" set and
-   "voting_share" empty, and put the percentage in "unrestricted_threshold". Do not decide
-   restricted status yourself.
+5a. COLLATERAL COVERAGE. A dossier may carry a SECOND table — a heading about the security or
+   collateral coverage of subsidiaries — giving the share of each subsidiary's assets pledged
+   under the security agreement, plus the percentage below which a subsidiary sits outside the
+   security perimeter and is therefore "unrestricted". Such a table often names entities the
+   ownership table does not, and often has no text layer. Transcribe those entities too, with
+   "pledged_share" set and "voting_share" empty, and put the percentage in
+   "unrestricted_threshold". Do not decide restricted status yourself.
 
-6. AMOUNTS. Transcribe exactly as written: "$1,104,663.28" becomes "1104663.28".
+6. AMOUNTS. Transcribe exactly as written, dropping the currency sign and the separators:
+   "$9,876,543.21" becomes "9876543.21". That is an invented example of the FORMAT; every
+   amount you return must be one the document prints.
 
 6a. MISSING LEDGER AMOUNTS. The prompt names the rows whose amount the ledger export left blank.
    If ANY document in this file states the amount of such a row — a treasury memo, an internal
@@ -89,7 +93,7 @@ Add one more key to your JSON, "group_ppe", built from the CONSOLIDATED statemen
 
 {
   "parent": "the parent company the statements belong to",
-  "period": "the year they cover, e.g. 2025",
+  "period": "the year they cover, formatted like 2019",
   "opening": "net book value of property, plant and equipment at the START of the year",
   "closing": "net book value at the END of the year",
   "depreciation": "the depreciation charge for the year",

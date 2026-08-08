@@ -13,7 +13,7 @@ computed, precisely enough that a program can do it without reading the contract
 Return STRICT JSON with exactly these keys:
 
 {
-  "clause_id": "6.1",
+  "clause_id": "the number of the clause you were given, e.g. 7.4",
   "title": "short title of the covenant, from the clause heading",
   "expression": "arithmetic over term names, e.g. capex / (opex + rent)",
   "terms": [
@@ -24,6 +24,7 @@ Return STRICT JSON with exactly these keys:
       "description": "the clause's own definition of this quantity, quoted or closely paraphrased",
       "reclassification": "include_in | exclude_from | both | ignore",
       "entity_source": "kyc | corporate_structure | compliance_file | ias24 | \"\"",
+      "entity_scope": "restricted | unrestricted | \"\"",
       "direction": "outflow | inflow | any",
       "constant": "only for kind=constant, a decimal string"
     }
@@ -52,7 +53,7 @@ Rules that decide whether the specification is usable:
    - "no single overhead line may exceed X, checked on the larger of payroll and utilities"
      is expression "max(payroll, utilities)", NOT "payroll + utilities".
    - "revenue less the larger of payroll and taxes" is "revenue - max(payroll, taxes)".
-   - A ratio "A to B of at least 1.20x" is expression "A / B" with op ">=" and unit "ratio".
+   - A ratio "A to B of at least 1.45x" is expression "A / B" with op ">=" and unit "ratio".
 
 2. DIRECTION OF THE COMPARISON. "не превышал X" / "shall not exceed X" is op "<=".
    "не менее X" / "at least X" is op ">=". "не допускать снижения ниже X" is op ">=".
@@ -71,6 +72,14 @@ Rules that decide whether the specification is usable:
      transaction records rather than the audited statements.
    - "constant": a literal used inside the expression.
 
+3a. ENTITY SCOPE. A clause may narrow a quantity to counterparties of one security status:
+   only subsidiaries outside the security perimeter ("unrestricted"), or only those inside it
+   ("restricted"). Set "entity_scope" when the clause names such a status, and leave it empty
+   otherwise — empty means every counterparty counts. This is NOT the related-party test: a
+   clause capping payments to related or affiliated parties is kind=related_party_payments with
+   entity_scope empty, even when the clause heading itself uses the word "restricted" as the
+   defined name of those payments.
+
 4. RECLASSIFICATION. State what the clause says about amounts the auditor reallocated:
    "include_in" when amounts moved INTO the line count; "exclude_from" when amounts moved
    OUT are dropped; "both" when the auditor's allocation governs in both directions;
@@ -80,7 +89,7 @@ Rules that decide whether the specification is usable:
 
 5. TRIGGER. A covenant that applies only under a condition ("применяется только при
    условии, что ...", "springing") gets a trigger:
-   {"expression": "financing_receipts > 4000000", "description": "...", "source_quote": "..."}
+   {"expression": "financing_receipts > 12500000", "description": "...", "source_quote": "..."}
    Any term the trigger uses must also appear in "terms". A covenant with no such
    condition has trigger null. A threshold is not a trigger.
 
@@ -97,11 +106,11 @@ Rules that decide whether the specification is usable:
 
 7. PERIOD. "from" and "to" are REQUIRED and must be real dates — the engine selects
    transactions with them, and an empty period selects nothing. Take them from the clause.
-   "за четвёртый финансовый квартал периода, оканчивающегося 2025-12-31" is kind "quarter",
-   from 2025-10-01 to 2025-12-31. For kind "point_in_time" use the measurement window the
-   clause gives for its components and let "to" be the as-of date: a liability measured "по
-   состоянию на 2025-12-31" that includes costs incurred "за период с 2025-01-01 по
-   2025-12-31" is from 2025-01-01 to 2025-12-31.
+   A clause naming the fourth fiscal quarter of a year ending 2019-12-31 is kind "quarter",
+   from 2019-10-01 to 2019-12-31. For kind "point_in_time" use the measurement window the
+   clause gives for its components and let "to" be the as-of date: a liability measured as at
+   2019-12-31 that includes costs incurred over the year to that date is from 2019-01-01 to
+   2019-12-31. The dates here are worked examples — read the real ones off this clause.
 
 7a. VOCABULARY. "reclassification" is exactly one of include_in, exclude_from, both, ignore.
    "entity_source" is exactly one of kyc, corporate_structure, compliance_file, ias24, or the
@@ -112,8 +121,10 @@ Rules that decide whether the specification is usable:
    related parties; "single_txn" only when the clause limits ONE transaction on its own
    ("ни одна операция не должна превышать").
 
-9. THRESHOLD. "$1,500,000.00" is "1500000.00". "0.42x" is "0.42". "0.03x от выручки" is
-   "0.03" with unit "ratio".
+9. THRESHOLD. "$2,750,000.00" is "2750000.00". "0.37x" is "0.37". "0.06x от выручки" is
+   "0.06" with unit "ratio".
+   These are formatting examples with invented numbers. Never carry one into your answer:
+   the threshold is whatever THIS clause states.
 
 Output JSON only. No prose, no markdown fence.`
 

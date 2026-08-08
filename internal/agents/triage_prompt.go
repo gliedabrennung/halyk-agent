@@ -14,7 +14,7 @@ Return STRICT JSON with exactly these keys and no others:
   "doc_type": "credit_agreement | amendment | audit_report | kyc_dossier | corporate_structure | fx_table | other",
   "company_name": "the borrower or subject company this document is ABOUT, verbatim; empty string if none",
   "account_ids": ["ACC-1234"],
-  "period": "the reporting or covenant period, e.g. FY2025 or 2025-01-01..2025-12-31; empty if none",
+  "period": "the reporting or covenant period, formatted like FY2019 or 2019-01-01..2019-12-31; empty if none",
   "effective_date": "the date this document was signed or issued, YYYY-MM-DD; empty if unstated",
   "is_superseded": true/false,
   "amends_document": "what earlier document this one amends or restates; empty string if it does not",

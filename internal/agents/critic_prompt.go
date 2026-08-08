@@ -10,8 +10,9 @@ Check, in this order:
 
 1. The comparison direction. "не превышать"/"shall not exceed" is "<=", "не менее"/"at least"
    is ">=". A flipped operator turns compliance into breach.
-2. The threshold: exactly the number in the clause, in the same unit. A ratio written "0.42x"
-   is 0.42; "$1,500,000.00" is 1500000.00.
+2. The threshold: exactly the number in the clause, in the same unit. A ratio written "0.37x"
+   is 0.37; "$2,750,000.00" is 2750000.00. Those are invented formatting examples — the only
+   number that belongs in the specification is the one this clause prints.
 3. The expression. Does it produce the limited quantity? Watch for:
    - a sum where the clause says the larger of two lines, or the reverse;
    - a ratio inverted (numerator and denominator swapped);
@@ -19,7 +20,9 @@ Check, in this order:
    - a term the clause excludes being included.
 4. Every term: is its source right (audited statements vs the borrower's own ledger vs the
    parent's consolidated statements vs the notes), and does its reclassification setting match
-   what the clause says about amounts the auditor moved?
+   what the clause says about amounts the auditor moved? "entity_scope" is set only when the
+   clause narrows the term to restricted or unrestricted subsidiaries, and never for a
+   related-party test.
 5. The period, including quarters and point-in-time dates.
 6. A trigger, if and only if the clause makes the covenant conditional. A plain threshold is
    not a trigger. A carve-out is not a trigger.

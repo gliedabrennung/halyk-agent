@@ -9,12 +9,12 @@ import (
 
 func taxonomyBlock() string {
 	desc := map[domain.Category]string{
-		domain.CatRevenue:             "money earned from customers — every \"... sales settlement\" row",
+		domain.CatRevenue:             "money earned from customers for goods or services sold",
 		domain.CatFinancingReceipts:   "money drawn from a loan or facility; borrowed, not earned",
 		domain.CatCapex:               "purchase of a capital asset (equipment, plant, vehicles)",
 		domain.CatAssetTransfer:       "a capital asset moved to another group company rather than bought",
 		domain.CatPayroll:             "wages, salaries, bonuses, severance, staff funding transfers",
-		domain.CatUtilities:           "electricity, water, sewer, gas, heating, compressed air, metering",
+		domain.CatUtilities:           "electricity, water, sewer, gas, heating and other metered site supply",
 		domain.CatRent:                "rent and lease payments for premises, land, yards, equipment sites",
 		domain.CatTaxes:               "taxes, duties, levies, VAT, tax penalties and assessments",
 		domain.CatInterestExpense:     "interest PAID or accrued on borrowings, including capitalised interest",
@@ -46,27 +46,31 @@ Categories:
 ` + taxonomyBlock() + `
 Two things decide the answer, and neither is the counterparty name. Counterparties in this ledger
 are near-unique and unrelated to what was bought: an electricity bill can be payable to a company
-called "Northwind Catering". Read the description. Use the sign (outflow/inflow) to tell a cost
+called "Blue Harbour Bakery". Read the description. Use the sign (outflow/inflow) to tell a cost
 from its reversal.
 
 "contra" is true when an INFLOW reverses an earlier cost of the SAME category — a refund, rebate,
 credit note, returned deposit, recovered advance. Then category is the cost's category, not an
 income category. It is false for costs and for genuine income.
 
-The distinctions that matter here:
+The distinctions that matter here. They are rules about what happened, not phrases to match — the
+wording in front of you will differ:
 
-- "insurance claim reimbursement" / "insurance deductible recovery" are other_income: the insurer
-  paying out a loss. They are NOT a refund of premiums. "insurance premium refund", "broker
-  rebate" and "experience refund" ARE (insurance_premiums, contra true).
-- "interest income on treasury bills" is interest_income. "interest rebate on early repayment" and
-  "interest recovery on overpayment" reduce interest paid: interest_expense, contra true.
-- "capitalised interest charge" is interest_expense, not capex.
-- "term loan facility drawdown" is financing_receipts, never revenue.
-- "payroll advance recovered from staff", "unclaimed payroll returned", "payroll accrual reversal"
-  are payroll, contra true. "payroll accrual funding" and "payroll top-up transfer" are payroll
-  costs, contra false.
-- "sublet rent received" and "lease incentive received" reduce rent: rent, contra true.
-- A "levy" can be either: "municipal tax levy" is taxes, "sewer discharge levy" is utilities.
+- An insurer paying out a loss (a claim reimbursed, a deductible recovered) is other_income: that
+  money never came off a premium. A premium refunded, a broker rebate, an experience refund DO
+  come off the premium — insurance_premiums, contra true.
+- Interest EARNED on a balance, deposit or security is interest_income. Interest PAID that is
+  later reduced — rebated on early repayment, recovered after an overpayment — is
+  interest_expense, contra true.
+- Interest capitalised into the cost of an asset is still interest_expense, not capex.
+- Money drawn under a loan or facility is financing_receipts, never revenue, however it is worded.
+- Payroll money coming BACK — an advance recovered from staff, unclaimed wages returned,
+  overfunding returned, an accrual reversed — is payroll, contra true. Payroll money going out to
+  fund, accrue or top up the same obligation is payroll, contra false.
+- Rent received that offsets rent paid — a sublet, a lease incentive, a deposit released — is
+  rent, contra true.
+- Words like "levy", "charge" or "duty" fix nothing on their own: read what is being charged for.
+  A levy assessed by a tax authority is taxes; a levy on metered supply or discharge is utilities.
 
 Return STRICT JSON:
 
