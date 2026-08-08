@@ -150,8 +150,6 @@ func computeTerm(
 }
 
 func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Category) (termResult, error) {
-	res := termResult{Name: term.Name}
-
 	inScope := make(map[string]bool)
 	if in.Facts != nil {
 		for _, p := range in.Facts.Parties {
@@ -164,29 +162,22 @@ func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Categ
 		}
 	}
 	if len(inScope) == 0 {
-
+		res := categoryTerm(term, rows, cat, cat == domain.CatCapex)
+		applyReclassification(&res, term, in, cat)
 		res.Unmeasurable = true
-		res.Trace = fmt.Sprintf(
-			"%s: the dossier names no %s counterparty, so %s rows cannot be narrowed to them",
-			term.Name, term.EntityScope, cat)
+		res.Trace += fmt.Sprintf("; the dossier names no %s counterparty, so the term is not narrowed",
+			term.EntityScope)
+		return res, nil
 	}
 
-	sum := decimal.Zero
+	scoped := make([]row, 0, len(rows))
 	for _, r := range rows {
-		if r.label.Category != cat {
-			continue
+		if inScope[domain.EntityKey(r.txn.Counterparty)] {
+			scoped = append(scoped, r)
 		}
-		if len(inScope) > 0 && !inScope[domain.EntityKey(r.txn.Counterparty)] {
-			continue
-		}
-		sum = sum.Add(r.txn.AmountUSD)
-		res.Contributors = append(res.Contributors, r.txn.ID)
 	}
-	res.Value = sum.Abs()
-	if res.Trace == "" {
-		res.Trace = fmt.Sprintf("%s = %s over %d %s row(s) booked to a %s counterparty",
-			term.Name, res.Value.StringFixed(2), len(res.Contributors), cat, term.EntityScope)
-	}
+	res := categoryTerm(term, scoped, cat, cat == domain.CatCapex)
+	res.Trace += fmt.Sprintf("; narrowed to %s counterparties", term.EntityScope)
 	return res, nil
 }
 

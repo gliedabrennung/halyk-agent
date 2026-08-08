@@ -78,7 +78,9 @@ Rules that decide whether the specification is usable:
    otherwise — empty means every counterparty counts. This is NOT the related-party test: a
    clause capping payments to related or affiliated parties is kind=related_party_payments with
    entity_scope empty, even when the clause heading itself uses the word "restricted" as the
-   defined name of those payments.
+   defined name of those payments. It is equally meaningless for a line of the audited
+   statements — revenue, operating costs, capital expenditure are figures, not counterparties.
+   Leave it empty unless the clause itself limits the term to subsidiaries of one status.
 
 4. RECLASSIFICATION. State what the clause says about amounts the auditor reallocated:
    "include_in" when amounts moved INTO the line count; "exclude_from" when amounts moved

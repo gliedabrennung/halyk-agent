@@ -562,3 +562,72 @@ func TestRelatedPartyTermStaysMeasurableWhenTheDossierNamesNobody(t *testing.T) 
 		t.Errorf("confidence = %v: a dossier with no related parties is an answer, not a gap", v.Confidence)
 	}
 }
+
+func TestScopedTermStillFollowsTheAuditorWhenItCannotNarrow(t *testing.T) {
+	build := func(scope string) *Inputs {
+		return &Inputs{
+			Facts: &domain.FactBase{Adjustments: []domain.Adjustment{{
+				Kind: domain.AdjReclassify, Counterparty: "Advisory Bureau",
+				Amount: dec("400000"), FromCategory: "Консультационные услуги",
+				ToCategory: "Операционные расходы", Applied: true,
+			}}},
+			Labels: &domain.LabelSet{Txns: []domain.TxnLabel{label("TXN-P1-0001", domain.CatOperatingCosts)}},
+			Txns:   []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Contractor", "-1000000")},
+		}
+	}
+	plain := spec("opex", "<=", "1200000", term("opex", "Операционные расходы"))
+	scoped := spec("opex", "<=", "1200000",
+		domain.Term{Name: "opex", Kind: domain.TermStatementLine,
+			Line: "Операционные расходы", EntityScope: domain.StatusRestricted})
+
+	want, err := Evaluate(plain, build(""))
+	if err != nil {
+		t.Fatalf("Evaluate plain: %v", err)
+	}
+	got, err := Evaluate(scoped, build(domain.StatusRestricted))
+	if err != nil {
+		t.Fatalf("Evaluate scoped: %v", err)
+	}
+	if !got.Actual.Equal(want.Actual) {
+		t.Errorf("actual = %s, want %s: a scope nothing answers must not drop the reclassification",
+			got.Actual, want.Actual)
+	}
+	if got.Status != want.Status {
+		t.Errorf("status = %s, want %s", got.Status, want.Status)
+	}
+	if got.Confidence > 0.2 {
+		t.Errorf("confidence = %v, want it dropped for a scope that could not be applied", got.Confidence)
+	}
+}
+
+func TestScopedTermCountsOnlyTheCounterpartiesInScope(t *testing.T) {
+	in := &Inputs{
+		Facts: &domain.FactBase{Parties: []domain.Party{
+			{Name: "Inside Holdings LLP", Status: domain.StatusUnrestricted},
+			{Name: "Outside Holdings LLP", Status: domain.StatusRestricted},
+		}},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+			label("TXN-P1-0001", domain.CatAssetTransfer),
+			label("TXN-P1-0002", domain.CatAssetTransfer),
+		}},
+		Txns: []domain.Txn{
+			ledgerRow("TXN-P1-0001", 10, "Inside Holdings LLP", "-300000"),
+			ledgerRow("TXN-P1-0002", 20, "Outside Holdings LLP", "-700000"),
+		},
+	}
+	s := spec("transferred", "<=", "1000000",
+		domain.Term{Name: "transferred", Kind: domain.TermLedgerCategory,
+			Line:        "капитальные активы, переданные дочерним организациям",
+			EntityScope: domain.StatusUnrestricted})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("300000")) {
+		t.Errorf("actual = %s, want 300000: only the unrestricted counterparty counts", v.Actual)
+	}
+	if v.Confidence <= 0.2 {
+		t.Errorf("confidence = %v: the scope was applied, nothing is missing", v.Confidence)
+	}
+}
