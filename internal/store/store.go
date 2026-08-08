@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
@@ -92,7 +93,7 @@ func Open(path string) (*Store, error) {
 	}
 	if _, err := db.Exec(_schema + _verdictSchema); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("apply _schema: %w", err)
+		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 	if err := migrate(db); err != nil {
 		db.Close()
@@ -123,25 +124,9 @@ func migrate(db *sql.DB) error {
 }
 
 func hasColumn(db *sql.DB, table, column string) (bool, error) {
-	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%q)`, table))
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notNull int
-		var dflt any
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&n)
+	return n > 0, err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -304,18 +289,15 @@ func (s *Store) DocText(docID string) (string, error) {
 	}
 	defer rows.Close()
 
-	var b []byte
+	var pages []string
 	for rows.Next() {
 		var t string
 		if err := rows.Scan(&t); err != nil {
 			return "", err
 		}
-		if len(b) > 0 {
-			b = append(b, '\f')
-		}
-		b = append(b, t...)
+		pages = append(pages, t)
 	}
-	return string(b), rows.Err()
+	return strings.Join(pages, "\f"), rows.Err()
 }
 
 func (s *Store) PutArtifact(kind, id string, v any) error {
