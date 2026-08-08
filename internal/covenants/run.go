@@ -1,13 +1,13 @@
 package covenants
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -209,27 +209,21 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		byScenario[s.ScenarioID] = append(byScenario[s.ScenarioID], s)
 	}
 	specs = extracted
-	for scn, list := range byScenario {
-		sort.Slice(list, func(i, j int) bool { return list[i].ClauseID < list[j].ClauseID })
-		if err := opts.Store.PutArtifact(ArtifactKind+opts.Namespace, scn, list); err != nil {
-			return nil, err
-		}
-	}
 
 	dir := filepath.Join(opts.Cfg.ArtifactsDir, "specs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	for scn, list := range byScenario {
-
-		if opts.Namespace != "" {
-			break
-		}
-		b, err := json.MarshalIndent(list, "", "  ")
-		if err != nil {
+		slices.SortFunc(list, func(a, b *domain.CovenantSpec) int { return strings.Compare(a.ClauseID, b.ClauseID) })
+		if err := opts.Store.PutArtifact(ArtifactKind+opts.Namespace, scn, list); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(filepath.Join(dir, scn+".json"), b, 0o644); err != nil {
+		// Пробный прогон в своём namespace на диск не пишет: файлы принадлежат основному.
+		if opts.Namespace != "" {
+			continue
+		}
+		if err := store.WriteJSON(filepath.Join(dir, scn+".json"), list); err != nil {
 			return nil, err
 		}
 	}
@@ -317,15 +311,14 @@ func buildReport(specs []*domain.CovenantSpec, order []string) *Report {
 	for i, s := range order {
 		pos[s] = i
 	}
-	sort.SliceStable(rep.Rows, func(i, j int) bool {
-		if pos[rep.Rows[i].ScenarioID] != pos[rep.Rows[j].ScenarioID] {
-			return pos[rep.Rows[i].ScenarioID] < pos[rep.Rows[j].ScenarioID]
-		}
-		return rep.Rows[i].ClauseID < rep.Rows[j].ClauseID
+	slices.SortStableFunc(rep.Rows, func(a, b Row) int {
+		return cmp.Or(
+			cmp.Compare(pos[a.ScenarioID], pos[b.ScenarioID]),
+			cmp.Compare(a.ClauseID, b.ClauseID))
 	})
-	sort.Strings(rep.WithTrigger)
-	sort.Strings(rep.WithCarveout)
-	sort.Strings(rep.CriticFixed)
+	slices.Sort(rep.WithTrigger)
+	slices.Sort(rep.WithCarveout)
+	slices.Sort(rep.CriticFixed)
 	return rep
 }
 
@@ -352,19 +345,9 @@ func (r *Report) String() string {
 			row.Threshold, row.Unit, row.Evidence, flags)
 	}
 	fmt.Fprintf(&b, "%s\n", line)
-	fmt.Fprintf(&b, "  units      ")
-	for _, k := range domain.SortedKeys(r.ByUnit) {
-		fmt.Fprintf(&b, "%s=%d ", k, r.ByUnit[k])
-	}
-	fmt.Fprintf(&b, "\n  evidence   ")
-	for _, k := range domain.SortedKeys(r.ByEvidence) {
-		fmt.Fprintf(&b, "%s=%d ", k, r.ByEvidence[k])
-	}
-	fmt.Fprintf(&b, "\n  term kinds ")
-	for _, k := range domain.SortedKeys(r.TermKinds) {
-		fmt.Fprintf(&b, "%s=%d ", k, r.TermKinds[k])
-	}
-	fmt.Fprintf(&b, "\n")
+	fmt.Fprintf(&b, "  units      %s\n", domain.JoinPairs(r.ByUnit))
+	fmt.Fprintf(&b, "  evidence   %s\n", domain.JoinPairs(r.ByEvidence))
+	fmt.Fprintf(&b, "  term kinds %s\n", domain.JoinPairs(r.TermKinds))
 	if len(r.WithTrigger) > 0 {
 		fmt.Fprintf(&b, "  triggers   %s\n", strings.Join(r.WithTrigger, " "))
 	}

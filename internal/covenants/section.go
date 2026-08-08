@@ -1,9 +1,10 @@
 package covenants
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -75,7 +76,7 @@ func articleOccurrences(text string) []articleOccurrence {
 		}
 		out = append(out, articleOccurrence{number: n, start: loc[0], line: line})
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].start < out[j].start })
+	slices.SortStableFunc(out, func(a, b articleOccurrence) int { return cmp.Compare(a.start, b.start) })
 	return out
 }
 
@@ -96,10 +97,8 @@ func Clause(sectionText, clauseID string) (string, error) {
 
 func ClauseIDs(sectionText string) []string {
 	var out []string
-	seen := make(map[string]bool)
 	for _, m := range clauseStartRe.FindAllStringSubmatch(sectionText, -1) {
-		if !seen[m[1]] {
-			seen[m[1]] = true
+		if !slices.Contains(out, m[1]) {
 			out = append(out, m[1])
 		}
 	}
@@ -110,10 +109,7 @@ func PageOf(text string, offset int) int {
 	if offset <= 0 {
 		return 1
 	}
-	if offset > len(text) {
-		offset = len(text)
-	}
-	return strings.Count(text[:offset], "\f") + 1
+	return strings.Count(text[:min(offset, len(text))], "\f") + 1
 }
 
 func CovenantArticleFor(text string, clauseIDs []string) (Section, error) {
@@ -143,20 +139,17 @@ func articleNumberOf(clauseID string) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	n := 0
-	if _, err := fmt.Sscanf(major, "%d", &n); err != nil {
+	n, err := strconv.Atoi(major)
+	if err != nil {
 		return 0, false
 	}
 	return n, true
 }
 
 func hasAllClauses(sectionText string, clauseIDs []string) bool {
-	present := make(map[string]bool, len(clauseIDs))
-	for _, id := range ClauseIDs(sectionText) {
-		present[id] = true
-	}
+	present := ClauseIDs(sectionText)
 	for _, id := range clauseIDs {
-		if !present[id] {
+		if !slices.Contains(present, id) {
 			return false
 		}
 	}
