@@ -762,3 +762,64 @@ func TestAnAddBackIsNotCountedTwice(t *testing.T) {
 		t.Errorf("actual = %s, want 3000000: the add-back belongs to the term that names it", v.Actual)
 	}
 }
+
+func TestATermNoLedgerCategoryCarriesIsReadFromTheNotes(t *testing.T) {
+	build := func(kind domain.TermKind) *Inputs {
+		return &Inputs{
+			Facts: &domain.FactBase{Adjustments: []domain.Adjustment{{
+				Kind: domain.AdjEBITDAAddBack, Amount: dec("481247.63"), Applied: true,
+			}}},
+			Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+				label("TXN-P1-0001", domain.CatRevenue),
+				label("TXN-P1-0002", domain.CatOperatingCosts),
+				label("TXN-P1-0003", domain.CatOperatingCosts),
+			}},
+			Txns: []domain.Txn{
+				ledgerRow("TXN-P1-0001", 10, "Customer", "7004318.47"),
+				ledgerRow("TXN-P1-0002", 20, "Contractor", "-4683001.13"),
+				ledgerRow("TXN-P1-0003", 30, "Restoration Works", "-481247.63"),
+			},
+		}
+	}
+	withKind := func(kind domain.TermKind) *domain.CovenantSpec {
+		return spec("(revenue - opex + one_off_items) / revenue", ">=", "0.28",
+			term("revenue", "Выручка"),
+			term("opex", "Операционные расходы"),
+			domain.Term{Name: "one_off_items", Kind: kind, Line: "Разовые статьи"})
+	}
+
+	declared, err := Evaluate(withKind(domain.TermStatementNote), build(domain.TermStatementNote))
+	if err != nil {
+		t.Fatalf("Evaluate declared: %v", err)
+	}
+	mislabelled, err := Evaluate(withKind(domain.TermStatementLine), build(domain.TermStatementLine))
+	if err != nil {
+		t.Fatalf("a line no category carries must not sink the cell: %v", err)
+	}
+	if !mislabelled.Actual.Equal(declared.Actual) {
+		t.Errorf("actual %s vs %s: the notes are the only other source of a figure",
+			mislabelled.Actual, declared.Actual)
+	}
+}
+
+func TestANoteTermTheNotesDoNotAnswerIsUnmeasurable(t *testing.T) {
+	in := &Inputs{
+		Facts:  &domain.FactBase{},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{label("TXN-P1-0001", domain.CatRevenue)}},
+		Txns:   []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Customer", "3000000")},
+	}
+	s := spec("revenue + severance", ">=", "1000000",
+		term("revenue", "Выручка"),
+		domain.Term{Name: "severance", Kind: domain.TermStatementNote, Line: "программа выходных пособий"})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if v.Confidence > 0.2 {
+		t.Errorf("confidence = %v, want it dropped: nothing answered the term", v.Confidence)
+	}
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "disclose no figure") }) {
+		t.Errorf("the trace must say the notes held nothing: %q", v.Trace)
+	}
+}

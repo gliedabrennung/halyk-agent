@@ -136,8 +136,7 @@ func computeTerm(
 		cat, ok = domain.CategoryForLine(term.Description)
 	}
 	if !ok {
-		return res, fmt.Errorf("%s/%s: term %q names line %q, which maps to no category",
-			spec.ScenarioID, spec.ClauseID, term.Name, term.Line)
+		return noteTerm(term, in, rows)
 	}
 
 	if term.EntityScope != "" {
@@ -316,6 +315,12 @@ func noteTerm(term domain.Term, in *Inputs, rows []row) (termResult, error) {
 		}
 	}
 	res.Value = sum
+	if len(parts) == 0 {
+		res.Unmeasurable = true
+		res.Trace = fmt.Sprintf("%s: no ledger category carries %q and the notes disclose no figure for it",
+			term.Name, term.Line)
+		return res, nil
+	}
 	res.Trace = fmt.Sprintf("%s = %s from the notes (%s)",
 		term.Name, res.Value.StringFixed(2), strings.Join(parts, ", "))
 	return res, nil
