@@ -222,3 +222,69 @@ func TestAssembleFailsOnUnlabelledPattern(t *testing.T) {
 		t.Fatal("a row whose pattern has no label must fail loudly, not default to a category")
 	}
 }
+
+// Модель иногда выдумывает txn_id, которого в леджере нет (реальный случай: B1, TXN-B1-0634
+// вместо TXN-B1-0020). Корректировку это терять не должно: контрагент и сумма на месте.
+func TestAssembleFallsBackToCounterpartyWhenTheTxnIDIsInvented(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{
+				Kind:         domain.AdjReclassify,
+				TxnID:        "TXN-P1-0634",
+				Counterparty: "Irtysh Advisory Bureau",
+				Amount:       dec("592296.10"),
+				ToCategory:   "Процентные расходы",
+				Applied:      true,
+			},
+		},
+	}
+	txns := []*domain.Txn{
+		txn("TXN-P1-0020", "Irtysh Advisory Bureau", "Advisory engagement on tariff structuring", "-592296.10"),
+	}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "advisory engagement on tariff structuring", Category: domain.CatProfessionalService, Source: "llm"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("the invented id must still be reported once, got %v", warnings)
+	}
+
+	moved, ok := set.Lookup("TXN-P1-0020")
+	if !ok {
+		t.Fatal("the row is missing from the label set")
+	}
+	if !moved.Reclassified {
+		t.Error("the row must be marked from the counterparty match, not dropped with the bad id")
+	}
+	if moved.ReclassifiedTo != domain.CatInterestExpense {
+		t.Errorf("reclassified_to = %q, want %q", moved.ReclassifiedTo, domain.CatInterestExpense)
+	}
+}
+
+// Выдуманный id и контрагент, который ни с чем не сходится: пометить нечего.
+func TestAssembleLeavesAnInventedTxnIDUnmarkedWhenNothingElseMatches(t *testing.T) {
+	fb := &domain.FactBase{
+		ScenarioID: "P1",
+		Adjustments: []domain.Adjustment{
+			{Kind: domain.AdjReclassify, TxnID: "TXN-P1-9999", Counterparty: "Nobody LLP", Applied: true},
+		},
+	}
+	txns := []*domain.Txn{txn("TXN-P1-0004", "Acme LLP", "Office rent — north wing", "-1000")}
+	set, warnings, err := assemble("P1", fb, txns, labels(
+		domain.Label{Pattern: "office rent", Category: domain.CatRent, Source: "rule"},
+	))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("both the bad id and the failed counterparty match must be reported, got %v", warnings)
+	}
+	for _, tl := range set.Txns {
+		if tl.Reclassified || tl.AdjustmentKind != "" {
+			t.Errorf("%s was marked from an adjustment that matches nothing", tl.TxnID)
+		}
+	}
+}

@@ -447,39 +447,27 @@ func markAdjustments(
 	var warnings []string
 	for _, adj := range fb.Adjustments {
 		idx := -1
-		switch {
-		case adj.TxnID != "":
-			i, ok := byID[adj.TxnID]
-			if !ok {
+		// Названный моделью txn_id — самый точный ключ, но и самый ненадёжный: его легко
+		// выдумать. Не нашли — не выбрасываем корректировку, а ищем строку по контрагенту.
+		if adj.TxnID != "" {
+			if i, ok := byID[adj.TxnID]; ok {
+				idx = i
+			} else {
 				warnings = append(warnings, fmt.Sprintf(
-					"%s: adjustment names %s, which is not a row of this borrower", scenarioID, adj.TxnID))
-				continue
+					"%s: adjustment names %s, which is not a row of this borrower; matching by counterparty instead",
+					scenarioID, adj.TxnID))
 			}
-			idx = i
-		case adj.Counterparty != "":
+		}
+		if idx < 0 && adj.Counterparty != "" {
 			candidates := byEntity[domain.EntityKey(adj.Counterparty)]
-			switch {
-			case len(candidates) == 1:
-				idx = candidates[0]
-			case len(candidates) > 1 && adj.Amount.IsPositive():
-
-				var hits []int
-				for _, c := range candidates {
-					if amountOf[set.Txns[c].TxnID].Abs().Equal(adj.Amount.Abs()) {
-						hits = append(hits, c)
-					}
-				}
-				if len(hits) == 1 {
-					idx = hits[0]
-				}
-			}
+			idx = rowForCounterparty(adj, set, candidates, amountOf)
 			if idx < 0 {
 				warnings = append(warnings, fmt.Sprintf("%s: adjustment for %q (%s) matches %d rows; left unmarked",
 					scenarioID, adj.Counterparty, adj.Amount, len(candidates)))
 				continue
 			}
-		default:
-
+		}
+		if idx < 0 {
 			continue
 		}
 
@@ -496,6 +484,33 @@ func markAdjustments(
 		}
 	}
 	return warnings
+}
+
+// rowForCounterparty находит единственную строку контрагента; когда их несколько, различает
+// по сумме корректировки. Возвращает -1, если однозначного совпадения нет.
+func rowForCounterparty(
+	adj domain.Adjustment,
+	set *domain.LabelSet,
+	candidates []int,
+	amountOf map[string]decimal.Decimal,
+) int {
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	if len(candidates) <= 1 || !adj.Amount.IsPositive() {
+		return -1
+	}
+	hit := -1
+	for _, c := range candidates {
+		if !amountOf[set.Txns[c].TxnID].Abs().Equal(adj.Amount.Abs()) {
+			continue
+		}
+		if hit >= 0 {
+			return -1
+		}
+		hit = c
+	}
+	return hit
 }
 
 func summarise(set *domain.LabelSet) Row {
