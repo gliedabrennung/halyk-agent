@@ -96,27 +96,11 @@ func ExtractFacts(
 		SchemaVersion: FactsSchemaVersion,
 		JSON:          true,
 	}
-	raw, err := client.Complete(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	facts, err := parseFacts(raw, in)
-	if err == nil {
-		return facts, nil
-	}
-
-	repair := req
-	repair.SchemaVersion = FactsSchemaVersion + "-repair"
-	repair.Prompt = fmt.Sprintf(_factsRepairPrompt, err, raw, in.prompt())
-	raw2, err2 := client.Complete(ctx, repair)
-	if err2 != nil {
-		return nil, fmt.Errorf("%s facts: %w", in.ScenarioID, err)
-	}
-	facts, err2 = parseFacts(raw2, in)
-	if err2 != nil {
-		return nil, fmt.Errorf("%s facts: unusable after repair: %w", in.ScenarioID, err2)
-	}
-	return facts, nil
+	return completeWithRepair(ctx, client, req, in.ScenarioID+" facts",
+		func(cause error, raw string) string {
+			return fmt.Sprintf(_factsRepairPrompt, cause, raw, in.prompt())
+		},
+		func(raw string) (*domain.FactBase, error) { return parseFacts(raw, in) })
 }
 
 func parseFacts(raw string, in FactsInput) (*domain.FactBase, error) {
@@ -190,36 +174,22 @@ func parseFacts(raw string, in FactsInput) (*domain.FactBase, error) {
 			Status:    strings.TrimSpace(p.Status),
 			SourceRef: domain.PageRef{DocID: strings.TrimSpace(p.SourceDoc), Quote: strings.TrimSpace(p.Quote)},
 		}
-		if s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(p.VotingShare), "%")); s != "" {
-			share, err := parseDecimal(s)
-			if err != nil {
-				return nil, fmt.Errorf("voting share %q for %s: %w", p.VotingShare, name, err)
-			}
-			party.VotingShare = share
+		var err error
+		if party.VotingShare, err = parsePercent(p.VotingShare); err != nil {
+			return nil, fmt.Errorf("voting share %q for %s: %w", p.VotingShare, name, err)
 		}
-		if s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(p.PledgedShare), "%")); s != "" {
-			share, err := parseDecimal(s)
-			if err != nil {
-				return nil, fmt.Errorf("pledged share %q for %s: %w", p.PledgedShare, name, err)
-			}
-			party.PledgedShare = share
+		if party.PledgedShare, err = parsePercent(p.PledgedShare); err != nil {
+			return nil, fmt.Errorf("pledged share %q for %s: %w", p.PledgedShare, name, err)
 		}
 		fb.Parties = append(fb.Parties, party)
 	}
 
-	if s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(fj.RelatedPartyThreshold), "%")); s != "" {
-		th, err := parseDecimal(s)
-		if err != nil {
-			return nil, fmt.Errorf("related_party_threshold %q: %w", fj.RelatedPartyThreshold, err)
-		}
-		fb.RelatedPartyThreshold = th
+	var err error
+	if fb.RelatedPartyThreshold, err = parsePercent(fj.RelatedPartyThreshold); err != nil {
+		return nil, fmt.Errorf("related_party_threshold %q: %w", fj.RelatedPartyThreshold, err)
 	}
-	if s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(fj.UnrestrictedThreshold), "%")); s != "" {
-		th, err := parseDecimal(s)
-		if err != nil {
-			return nil, fmt.Errorf("unrestricted_threshold %q: %w", fj.UnrestrictedThreshold, err)
-		}
-		fb.UnrestrictedThreshold = th
+	if fb.UnrestrictedThreshold, err = parsePercent(fj.UnrestrictedThreshold); err != nil {
+		return nil, fmt.Errorf("unrestricted_threshold %q: %w", fj.UnrestrictedThreshold, err)
 	}
 
 	if fb.RelatedPartyThreshold.IsPositive() {

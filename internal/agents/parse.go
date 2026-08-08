@@ -1,12 +1,58 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/gliedabrennung/halyk-agent/internal/llm"
 	"github.com/shopspring/decimal"
 )
+
+// completeWithRepair вызывает модель и разбирает ответ, а при неудачном разборе делает
+// ровно одну повторную попытку с ремонтным промптом. В ошибке остаётся первичная причина
+// отказа: именно она объясняет, чем плох ответ модели. label попадает в текст ошибки.
+func completeWithRepair[T any](
+	ctx context.Context,
+	client *llm.Client,
+	req llm.Request,
+	label string,
+	repairPrompt func(cause error, raw string) string,
+	parse func(raw string) (T, error),
+) (T, error) {
+	var zero T
+	raw, err := client.Complete(ctx, req)
+	if err != nil {
+		return zero, err
+	}
+	out, cause := parse(raw)
+	if cause == nil {
+		return out, nil
+	}
+
+	repair := req
+	repair.SchemaVersion += "-repair"
+	repair.Prompt = repairPrompt(cause, raw)
+	raw, err = client.Complete(ctx, repair)
+	if err != nil {
+		return zero, fmt.Errorf("%s: %w (repair call also failed: %v)", label, cause, err)
+	}
+	out, err = parse(raw)
+	if err != nil {
+		return zero, fmt.Errorf("%s: unusable after repair: %w", label, err)
+	}
+	return out, nil
+}
+
+// parsePercent читает долю вида "35" или "35 %"; пустая строка даёт ноль без ошибки.
+func parsePercent(raw string) (decimal.Decimal, error) {
+	s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(raw), "%"))
+	if s == "" {
+		return decimal.Zero, nil
+	}
+	return parseDecimal(s)
+}
 
 func parseDecimal(s string) (decimal.Decimal, error) {
 	s = strings.TrimSpace(s)

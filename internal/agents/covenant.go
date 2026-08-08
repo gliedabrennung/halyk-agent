@@ -77,7 +77,7 @@ func ExtractCovenant(
 	in CovenantInput,
 	maxCriticPasses int,
 ) (*domain.CovenantSpec, error) {
-	raw, err := client.Complete(ctx, llm.Request{
+	spec, err := completeWithRepair(ctx, client, llm.Request{
 		Name:          "covenant_extract",
 		Model:         model,
 		Description:   "Turns one covenant clause into an executable specification.",
@@ -85,28 +85,13 @@ func ExtractCovenant(
 		Prompt:        in.prompt(),
 		SchemaVersion: CovenantSchemaVersion,
 		JSON:          true,
-	})
+	}, in.ScenarioID+"/"+in.ClauseID,
+		func(cause error, raw string) string {
+			return fmt.Sprintf(_covenantRepairPrompt, cause, raw, in.prompt())
+		},
+		func(raw string) (*domain.CovenantSpec, error) { return parseCovenant(raw, in) })
 	if err != nil {
 		return nil, err
-	}
-	spec, err := parseCovenant(raw, in)
-	if err != nil {
-		repaired, rerr := client.Complete(ctx, llm.Request{
-			Name:          "covenant_extract",
-			Model:         model,
-			Description:   "Repairs a malformed covenant specification.",
-			Instruction:   _covenantInstruction,
-			Prompt:        fmt.Sprintf(_covenantRepairPrompt, err, raw, in.prompt()),
-			SchemaVersion: CovenantSchemaVersion + "-repair",
-			JSON:          true,
-		})
-		if rerr != nil {
-			return nil, fmt.Errorf("%s/%s: %w", in.ScenarioID, in.ClauseID, err)
-		}
-		spec, err = parseCovenant(repaired, in)
-		if err != nil {
-			return nil, fmt.Errorf("%s/%s: unusable after repair: %w", in.ScenarioID, in.ClauseID, err)
-		}
 	}
 
 	for pass := 1; pass <= maxCriticPasses; pass++ {

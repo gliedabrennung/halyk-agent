@@ -60,28 +60,11 @@ func ClassifyPatterns(
 		SchemaVersion: ClassifySchemaVersion,
 		JSON:          true,
 	}
-	raw, err := client.Complete(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	out, err := parseClassify(raw, len(items))
-	if err == nil {
-		return out, nil
-	}
-
-	repair := req
-	repair.SchemaVersion = ClassifySchemaVersion + "-repair"
-	repair.Prompt = fmt.Sprintf(_classifyRepairPrompt,
-		err, raw, req.Prompt)
-	raw2, err2 := client.Complete(ctx, repair)
-	if err2 != nil {
-		return nil, fmt.Errorf("classify batch: %w", err)
-	}
-	out, err2 = parseClassify(raw2, len(items))
-	if err2 != nil {
-		return nil, fmt.Errorf("classify batch: unusable after repair: %w", err2)
-	}
-	return out, nil
+	return completeWithRepair(ctx, client, req, "classify batch",
+		func(cause error, raw string) string {
+			return fmt.Sprintf(_classifyRepairPrompt, cause, raw, req.Prompt)
+		},
+		func(raw string) ([]ClassifyResult, error) { return parseClassify(raw, len(items)) })
 }
 
 func parseClassify(raw string, n int) ([]ClassifyResult, error) {

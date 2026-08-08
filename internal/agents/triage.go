@@ -48,28 +48,9 @@ func Triage(ctx context.Context, client *llm.Client, in TriageInput) (*TriageRes
 		SchemaVersion: TriageSchemaVersion,
 		JSON:          true,
 	}
-
-	raw, err := client.Complete(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	res, err := parseTriage(raw)
-	if err == nil {
-		return res, nil
-	}
-
-	repair := req
-	repair.SchemaVersion = TriageSchemaVersion + "-repair"
-	repair.Prompt = fmt.Sprintf(_triageRepairPrompt, err, raw)
-	raw2, err2 := client.Complete(ctx, repair)
-	if err2 != nil {
-		return nil, fmt.Errorf("triage %s: %w (repair call also failed: %v)", in.DocID, err, err2)
-	}
-	res, err2 = parseTriage(raw2)
-	if err2 != nil {
-		return nil, fmt.Errorf("triage %s: unparseable after repair: %w", in.DocID, err2)
-	}
-	return res, nil
+	return completeWithRepair(ctx, client, req, "triage "+in.DocID,
+		func(cause error, raw string) string { return fmt.Sprintf(_triageRepairPrompt, cause, raw) },
+		parseTriage)
 }
 
 func parseTriage(raw string) (*TriageResult, error) {
