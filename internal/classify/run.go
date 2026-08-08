@@ -30,6 +30,19 @@ const (
 	PatternArtifactID   = "corpus"
 )
 
+// Откуда взялась разметка паттерна. Всё, кроме SourceRule, означает, что категорию назвала
+// модель; SourceRule — что батч до модели не дошёл и ответило keyword-правило.
+const (
+	SourceLLM       = "llm"
+	SourceRuleLLM   = "rule+llm"
+	SourceEscalated = "escalated"
+	SourceRule      = "rule"
+)
+
+func modelSettled(source string) bool {
+	return source == SourceLLM || source == SourceRuleLLM || source == SourceEscalated
+}
+
 type Options struct {
 	Cfg    *config.Config
 	Store  *store.Store
@@ -53,10 +66,44 @@ type Report struct {
 	Unknown     int `json:"unknown"`
 	Calls       int `json:"calls"`
 
+	// Kept — паттерны, чью прежнюю разметку этот прогон не стал портить своей деградацией.
+	Kept int `json:"kept"`
+
 	Rows     []Row    `json:"rows"`
 	Warnings []string `json:"warnings,omitempty"`
 	Failed   []string `json:"failed,omitempty"`
 	Path     string   `json:"path"`
+}
+
+// keepBetter не даёт прогону, который не дошёл до модели, затереть разметку, которую модель
+// уже подтвердила: упавший батч отдаёт паттерну source "rule", и записывать его поверх
+// прежнего ответа модели — чистая потеря. Обратной блокировки нет, свежий ответ модели всегда
+// заменяет прежний. Классификация берётся прежняя, а счётчики, образцы и сработавшее правило —
+// от этого прогона: они описывают сегодняшний леджер.
+func keepBetter(labels, stored []domain.Label) int {
+	if len(stored) == 0 {
+		return 0
+	}
+	previous := make(map[string]domain.Label, len(stored))
+	for _, l := range stored {
+		previous[l.Pattern] = l
+	}
+
+	kept := 0
+	for i := range labels {
+		if modelSettled(labels[i].Source) {
+			continue
+		}
+		prev, found := previous[labels[i].Pattern]
+		if !found || !modelSettled(prev.Source) {
+			continue
+		}
+		labels[i].Category, labels[i].Contra = prev.Category, prev.Contra
+		labels[i].Source, labels[i].Confidence = prev.Source, prev.Confidence
+		labels[i].Rationale, labels[i].Disputed = prev.Rationale, prev.Disputed
+		kept++
+	}
+	return kept
 }
 
 type Row struct {
@@ -69,6 +116,10 @@ type Row struct {
 }
 
 func (r *Report) OK() bool { return r.Unknown == 0 }
+
+// Degraded — хотя бы один батч до модели не дошёл. Разметка там либо от keyword-правил, либо
+// оставлена от прошлого прогона; ни то, ни другое не должно уходить молча.
+func (r *Report) Degraded() bool { return len(r.Failed) > 0 }
 
 func Run(ctx context.Context, opts Options) (*Report, error) {
 	start := time.Now()
@@ -97,6 +148,16 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	labels, err := labelPatterns(ctx, opts, patterns, rep)
 	if err != nil {
 		return nil, err
+	}
+
+	var stored []domain.Label
+	if _, err := opts.Store.GetArtifact(PatternArtifactKind+opts.Namespace, PatternArtifactID, &stored); err != nil {
+		return nil, err
+	}
+	rep.Kept = keepBetter(labels, stored)
+	if rep.Kept > 0 {
+		opts.Log.Warn("this run degraded; keeping the labels the model settled before",
+			"patterns", rep.Kept, "degraded_batches", len(rep.Failed))
 	}
 
 	dir := filepath.Join(opts.Cfg.ArtifactsDir, "labels")
@@ -312,17 +373,17 @@ func labelPatterns(
 		res := results[i]
 		rule := ruleHit[i]
 		correction, escalated := resolved[i]
-		source := "llm"
+		source := SourceLLM
 		if escalated {
-			res, source = correction, "escalated"
+			res, source = correction, SourceEscalated
 		} else if rule.fired() {
 
-			source = "rule+llm"
+			source = SourceRuleLLM
 		}
 		if res.Category == domain.CatUnknown && rule.fired() {
 
 			res.Category, res.Contra = rule.Cat, rule.Contra
-			source = "rule"
+			source = SourceRule
 		}
 		labels[i] = domain.Label{
 			Pattern:      p.pattern,
@@ -670,6 +731,10 @@ func (r *Report) String() string {
 		fmt.Fprintf(&b, "  DEGRADED %d batches, keyword rules used instead:\n", len(r.Failed))
 		for _, f := range r.Failed {
 			fmt.Fprintf(&b, "    %s\n", f)
+		}
+		if r.Kept > 0 {
+			fmt.Fprintf(&b, "  KEPT %d pattern(s) on the labels the model settled in an earlier run;"+
+				" this run did not overwrite them\n", r.Kept)
 		}
 	}
 	if len(r.Warnings) > 0 {

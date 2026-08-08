@@ -233,11 +233,26 @@ func newClassifyCmd(app *App) *cobra.Command {
 			if !rep.OK() {
 				return fmt.Errorf("%d transactions have no category", rep.Unknown)
 			}
+			if rep.Degraded() {
+				return classifyDegraded(rep)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringSliceVar(&only, "only", nil, "classify just these scenarios")
 	return cmd
+}
+
+// classifyDegraded описывает деградацию словами: что не дошло до модели и что уцелело от
+// прошлого прогона. Код возврата ненулевой, иначе прогон, не сделавший ни одного вызова,
+// выглядел бы как успешный.
+func classifyDegraded(rep *classify.Report) error {
+	if rep.Kept > 0 {
+		return fmt.Errorf("%d batch(es) never reached the model; %d pattern(s) kept the labels "+
+			"an earlier run settled and were not overwritten", len(rep.Failed), rep.Kept)
+	}
+	return fmt.Errorf("%d batch(es) never reached the model and fell back to keyword rules",
+		len(rep.Failed))
 }
 
 func newEvaluateCmd(app *App) *cobra.Command {
@@ -440,6 +455,9 @@ func newRunCmd(app *App) *cobra.Command {
 					}
 					if !rep.OK() {
 						return fmt.Errorf("%d transactions have no category", rep.Unknown)
+					}
+					if rep.Degraded() {
+						return classifyDegraded(rep)
 					}
 					return nil
 				}},

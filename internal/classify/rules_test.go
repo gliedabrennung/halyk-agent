@@ -129,3 +129,65 @@ func TestContraRulesGeneraliseBeyondTheCorpusWording(t *testing.T) {
 		}
 	}
 }
+
+func lbl(pattern string, cat domain.Category, source string) domain.Label {
+	return domain.Label{Pattern: pattern, Category: cat, Source: source, Confidence: 0.9}
+}
+
+// Прогон, не дошедший до модели, не должен уносить с собой разметку, которую модель уже
+// подтвердила: именно так исчерпание суточной квоты один раз переписало все метки корпуса
+// с rule+llm на rule.
+func TestKeepBetterRefusesToDowngradeSettledLabels(t *testing.T) {
+	stored := []domain.Label{
+		lbl("management advisory retainer", domain.CatProfessionalService, SourceRuleLLM),
+		lbl("interest credited on current account", domain.CatInterestIncome, SourceEscalated),
+		lbl("office rent", domain.CatRent, SourceRule),
+		lbl("sales settlement", domain.CatRevenue, SourceLLM),
+	}
+	fresh := []domain.Label{
+		// Батч упал: правило назвало ту же категорию, но это уже не ответ модели.
+		lbl("management advisory retainer", domain.CatProfessionalService, SourceRule),
+		// Правило ошибается там, где модель раньше разобралась.
+		lbl("interest credited on current account", domain.CatInterestExpense, SourceRule),
+		// Прежняя разметка сама была правилом — беречь нечего.
+		lbl("office rent", domain.CatRent, SourceRule),
+		// Модель ответила заново: свежий ответ главнее прежнего.
+		lbl("sales settlement", domain.CatOtherIncome, SourceLLM),
+		// Паттерна раньше не было.
+		lbl("quay wall survey", domain.CatOperatingCosts, SourceRule),
+	}
+
+	if kept := keepBetter(fresh, stored); kept != 2 {
+		t.Fatalf("kept %d patterns, want 2", kept)
+	}
+	byPattern := map[string]domain.Label{}
+	for _, l := range fresh {
+		byPattern[l.Pattern] = l
+	}
+	if got := byPattern["interest credited on current account"]; got.Category != domain.CatInterestIncome ||
+		got.Source != SourceEscalated {
+		t.Errorf("the settled label was overwritten by a keyword rule: %+v", got)
+	}
+	if got := byPattern["management advisory retainer"]; got.Source != SourceRuleLLM {
+		t.Errorf("source = %q, want the stored %q", got.Source, SourceRuleLLM)
+	}
+	if got := byPattern["sales settlement"]; got.Category != domain.CatOtherIncome || got.Source != SourceLLM {
+		t.Errorf("a fresh model answer must win: %+v", got)
+	}
+	if got := byPattern["office rent"]; got.Source != SourceRule {
+		t.Errorf("rule over rule is no rescue: %+v", got)
+	}
+	if got := byPattern["quay wall survey"]; got.Source != SourceRule {
+		t.Errorf("an unseen pattern has nothing to keep: %+v", got)
+	}
+}
+
+func TestKeepBetterOnAnEmptyStoreChangesNothing(t *testing.T) {
+	fresh := []domain.Label{lbl("office rent", domain.CatRent, SourceRule)}
+	if kept := keepBetter(fresh, nil); kept != 0 {
+		t.Errorf("kept %d, want 0", kept)
+	}
+	if fresh[0].Source != SourceRule {
+		t.Errorf("source = %q, want it untouched", fresh[0].Source)
+	}
+}
