@@ -1,0 +1,14 @@
+# Secrets
+/.env
+
+# Dataset — not ours to redistribute
+/data/
+
+# Build output
+/bin/
+
+# Derived state: SQLite store, page PNGs, LLM dumps, artifacts, submission
+/.cache/
+/logs/
+/artifacts/
+/out/

@@ -1,0 +1,16 @@
+# Exchange rates used to convert non-USD ledger rows for covenant testing.
+#
+# Provenance, not a guess: the only rate disclosed anywhere in the corpus is in
+# P3's audit report, Note 9 "Валютные курсы". It states that no rate table is
+# kept and that amounts are converted at the actual settlement rate of the
+# period, then gives one worked example — an invoice of 72,146.75 EUR settled by
+# a USD payment of 83,690.23. That is exactly 1.16 USD per EUR.
+#
+# P3's own agreement is the one that says foreign amounts convert "по курсу,
+# раскрытому аудитором". The other eleven borrowers have EUR rows but neither a
+# rate of their own nor a conversion clause, so this rate is applied corpus-wide.
+# A borrower whose own fact base discloses a rate overrides this file.
+#
+# Format: CURRENCY: rate-in-USD
+
+EUR: 1.16
