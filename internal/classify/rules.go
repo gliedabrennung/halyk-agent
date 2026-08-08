@@ -21,36 +21,58 @@ func rule(id, expr string, cat domain.Category, contra bool) Rule {
 	return Rule{ID: id, Re: regexp.MustCompile(`(?i)` + expr), Cat: cat, Contra: contra}
 }
 
+// Словарь возврата: слова, которыми документ описывает движение денег обратно по ранее
+// понесённому расходу. Правило contra строится как «словарь категории + словарь возврата»,
+// а не как список заученных описаний из конкретного реестра: иначе такое правило работает
+// ровно на том корпусе, по которому его выписали.
+const (
+	_reversal = `(refund|refunded|rebate|reversal|reversed|recovered|recovery|reclaim|` +
+		`returned|\breturn\b|released|sweep back|write-back|writeback|` +
+		`credit note|credit received|funding received)`
+
+	// _reversalLoose добавляет одиночное «credit». Для процентов его брать нельзя:
+	// «interest on export credit line» — это кредитная линия, а не возврат процентов.
+	_reversalLoose = `(` + _reversal + `|\bcredit\b)`
+)
+
 var _rules = []Rule{
-	rule("revenue.sales", `sales settlement`, domain.CatRevenue, false),
+	rule("revenue.sales", `\bsales\b.*\b(settlement|proceeds|receipts?)\b|revenue from`, domain.CatRevenue, false),
 	rule("financing.drawdown", `(facility|loan)\s+drawdown|drawdown\s+(of|on)\b`, domain.CatFinancingReceipts, false),
 	rule("capex.purchase", `\bpurchase of\b`, domain.CatCapex, false),
 	rule("capex.transfer", `\btransfer of\b.*\bto (a )?subsidiar`, domain.CatAssetTransfer, false),
 
-	rule("interest.contra", `interest (rebate|recovery)`, domain.CatInterestExpense, true),
-	rule("interest.income", `interest (income|credited)`, domain.CatInterestIncome, false),
+	rule("interest.contra", `\binterest\b.*`+_reversal, domain.CatInterestExpense, true),
+	rule("interest.income", `interest (income|credited|earned)`, domain.CatInterestIncome, false),
 	rule("interest.expense", `\binterest\b`, domain.CatInterestExpense, false),
 
-	rule("insurance.claim", `insurance (claim reimbursement|deductible recovery)`, domain.CatOtherIncome, false),
-	rule("insurance.contra", `insurance (premium refund|broker rebate|experience refund)|unearned insurance premium return`, domain.CatInsurancePremiums, true),
+	// Выплата страховщика по убытку — доход, а не возврат премии, поэтому идёт до contra.
+	rule("insurance.claim", `insurance.*(claim|deductible).*(reimburs|recovery|payout|settle)`,
+		domain.CatOtherIncome, false),
+	rule("insurance.contra", `(insurance|premium|fidelity bond).*`+_reversalLoose,
+		domain.CatInsurancePremiums, true),
 	rule("insurance.premium", `insurance|fidelity bond|workers comp`, domain.CatInsurancePremiums, false),
 
-	rule("payroll.contra", `payroll (advance recovered|overfunding returned|agency rebate|accrual reversal|clearing account sweep back)|unclaimed payroll returned`, domain.CatPayroll, true),
+	rule("payroll.contra", `(payroll|wages|salaries).*`+_reversalLoose, domain.CatPayroll, true),
 	rule("payroll.cost", `payroll`, domain.CatPayroll, false),
 
-	rule("utilities.contra", `(electricity|water|utility) .*(refund|credit|rebate|returned)`, domain.CatUtilities, true),
-	rule("utilities.cost", `electricity|water|sewer|natural gas|district heating|compressed air|utilit`, domain.CatUtilities, false),
+	rule("utilities.contra", `(electricity|water|sewer|gas|heating|utilit).*`+_reversalLoose,
+		domain.CatUtilities, true),
+	rule("utilities.cost", `electricity|water|sewer|natural gas|district heating|compressed air|utilit`,
+		domain.CatUtilities, false),
 
-	rule("taxes.contra", `tax (credit received|overpayment refunded|assessment reversal|rebate)|tax reclaim received|(vat|excise) (refund|credit) received`, domain.CatTaxes, true),
+	rule("taxes.contra", `(\btax\b|\bvat\b|excise|customs duty).*`+_reversalLoose, domain.CatTaxes, true),
 	rule("taxes.cost", `\btax\b|\bvat\b|customs duty|excise`, domain.CatTaxes, false),
 
-	rule("rent.contra", `rent (overpayment refunded|deposit returned|free period credit)|lease (incentive received|deposit released)|sublet rent received`, domain.CatRent, true),
+	rule("rent.contra", `(\brent\b|\blease\b|sublet).*`+_reversalLoose+
+		`|sublet rent received|lease incentive received`, domain.CatRent, true),
 	rule("rent.cost", `\brent\b|\blease\b`, domain.CatRent, false),
 
-	rule("marketing.contra", `marketing (overbilling refund|agency credit note|volume rebate|co-operative funding received)|media buy rate adjustment credit|ad campaign budget returned`, domain.CatMarketing, true),
-	rule("marketing.cost", `marketing|ad campaign|media buy|advertis|sponsorship|exhibition stand|point-of-sale`, domain.CatMarketing, false),
+	rule("marketing.contra", `(marketing|ad campaign|media buy|advertis|sponsorship).*`+_reversalLoose,
+		domain.CatMarketing, true),
+	rule("marketing.cost", `marketing|ad campaign|media buy|advertis|sponsorship|exhibition stand|point-of-sale`,
+		domain.CatMarketing, false),
 
-	rule("telecom.contra", `telecom service credit received`, domain.CatTelecom, true),
+	rule("telecom.contra", `(telecom|broadband).*`+_reversalLoose, domain.CatTelecom, true),
 	rule("telecom.cost", `telecom|broadband`, domain.CatTelecom, false),
 
 	rule("professional.services", `advisory|retainer|legal|arbitration|consult`, domain.CatProfessionalService, false),

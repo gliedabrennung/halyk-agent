@@ -91,3 +91,41 @@ func TestClassifyReportsNoMatch(t *testing.T) {
 		t.Fatal("a pattern matching no rule must report false, not a default category")
 	}
 }
+
+// Правила contra построены как «словарь категории + словарь возврата», поэтому обязаны
+// срабатывать на формулировках, которых в этом корпусе нет. Если такой тест падает — правило
+// снова выродилось в список заученных описаний.
+func TestContraRulesGeneraliseBeyondTheCorpusWording(t *testing.T) {
+	tests := []struct {
+		pattern string
+		cat     domain.Category
+		contra  bool
+	}{
+		{"insurance premium write-back after audit", domain.CatInsurancePremiums, true},
+		{"interest overcharge refunded by the lender", domain.CatInterestExpense, true},
+		{"wages overpayment recovered from a leaver", domain.CatPayroll, true},
+		{"district heating overbilling reversed", domain.CatUtilities, true},
+		{"customs duty reclaim received", domain.CatTaxes, true},
+		{"ground lease deposit released on exit", domain.CatRent, true},
+		{"sponsorship contribution refunded after cancellation", domain.CatMarketing, true},
+		{"broadband outage credit note", domain.CatTelecom, true},
+
+		// А это по-прежнему расходы и доходы, не возвраты.
+		{"interest on export credit line", domain.CatInterestExpense, false},
+		{"credit facility interest", domain.CatInterestExpense, false},
+		{"interest earned on escrow balance", domain.CatInterestIncome, false},
+		{"quarterly insurance premium instalment", domain.CatInsurancePremiums, false},
+		{"water supply charge for the depot", domain.CatUtilities, false},
+	}
+	for _, c := range tests {
+		r, ok := Classify(c.pattern)
+		if !ok {
+			t.Errorf("%q matched no rule", c.pattern)
+			continue
+		}
+		if r.Cat != c.cat || r.Contra != c.contra {
+			t.Errorf("%q -> %s (contra=%v) by %s; want %s (contra=%v)",
+				c.pattern, r.Cat, r.Contra, r.ID, c.cat, c.contra)
+		}
+	}
+}
