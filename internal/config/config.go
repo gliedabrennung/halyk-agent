@@ -47,7 +47,9 @@ func (c *Config) GroundTruthPath() string { return filepath.Join(c.DataDir, "gro
 
 func (c *Config) SubmissionPath() string { return filepath.Join(c.OutDir, "submission.json") }
 
-func LoadDotEnv(path string) error {
+// eachLine вызывает fn на каждой значимой строке файла, пропуская пустые и комментарии.
+// Отсутствие файла ошибкой не считается — fn просто не вызывается ни разу.
+func eachLine(path string, fn func(line int, text string) error) error {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -63,21 +65,26 @@ func LoadDotEnv(path string) error {
 		if text == "" || strings.HasPrefix(text, "#") {
 			continue
 		}
+		if err := fn(line, text); err != nil {
+			return err
+		}
+	}
+	return sc.Err()
+}
+
+func LoadDotEnv(path string) error {
+	return eachLine(path, func(line int, text string) error {
 		text = strings.TrimPrefix(text, "export ")
 		key, value, ok := strings.Cut(text, "=")
 		if !ok {
 			return fmt.Errorf("%s:%d: expected KEY=VALUE, got %q", path, line, text)
 		}
 		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
 		if _, set := os.LookupEnv(key); set {
-			continue
+			return nil
 		}
-		if err := os.Setenv(key, value); err != nil {
-			return err
-		}
-	}
-	return sc.Err()
+		return os.Setenv(key, strings.Trim(strings.TrimSpace(value), `"'`))
+	})
 }
 
 func Load() (*Config, error) {
@@ -125,37 +132,27 @@ func Load() (*Config, error) {
 func (c *Config) FXPath() string { return filepath.Join("config", "fx.yaml") }
 
 func LoadFXRates(path string) (map[string]decimal.Decimal, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return make(map[string]decimal.Decimal), nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
 	out := make(map[string]decimal.Decimal)
-	sc := bufio.NewScanner(f)
-	for line := 1; sc.Scan(); line++ {
-		text := strings.TrimSpace(sc.Text())
-		if text == "" || strings.HasPrefix(text, "#") {
-			continue
-		}
+	err := eachLine(path, func(line int, text string) error {
 		key, value, ok := strings.Cut(text, ":")
 		if !ok {
-			return nil, fmt.Errorf("%s:%d: expected \"CURRENCY: rate\", got %q", path, line, text)
+			return fmt.Errorf("%s:%d: expected \"CURRENCY: rate\", got %q", path, line, text)
 		}
 		cur := strings.ToUpper(strings.TrimSpace(key))
 		rate, err := decimal.NewFromString(strings.TrimSpace(value))
 		if err != nil {
-			return nil, fmt.Errorf("%s:%d: rate for %s is not a decimal: %q", path, line, cur, value)
+			return fmt.Errorf("%s:%d: rate for %s is not a decimal: %q", path, line, cur, value)
 		}
 		if !rate.IsPositive() {
-			return nil, fmt.Errorf("%s:%d: rate for %s must be positive, got %s", path, line, cur, rate)
+			return fmt.Errorf("%s:%d: rate for %s must be positive, got %s", path, line, cur, rate)
 		}
 		out[cur] = rate
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, sc.Err()
+	return out, nil
 }
 
 func (c *Config) EnsureDirs() error {
@@ -193,14 +190,12 @@ func (c *Config) RequireAPIKey() error {
 }
 
 func (c *Config) CallInterval() time.Duration {
-	interval := time.Duration(0)
+	var interval time.Duration
 	if c.RequestsPerMinute > 0 {
 		interval = time.Minute / time.Duration(c.RequestsPerMinute)
 	}
 	if c.RequestsPerHour > 0 {
-		if perHour := time.Hour / time.Duration(c.RequestsPerHour); perHour > interval {
-			interval = perHour
-		}
+		interval = max(interval, time.Hour/time.Duration(c.RequestsPerHour))
 	}
 	return interval
 }
