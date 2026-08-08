@@ -12,7 +12,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// Поля ячейки шаблона: ровно эти три, ни больше ни меньше.
 var _cellFields = []string{"status", "actual", "evidence_txn_id"}
 
 type Problem struct {

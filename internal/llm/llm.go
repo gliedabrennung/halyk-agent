@@ -39,14 +39,12 @@ type shared struct {
 	nextSlot    time.Time
 	minInterval time.Duration
 
-	// Суточная квота кончилась: сеть больше не трогаем, кэш продолжаем отдавать.
 	quotaMu  sync.Mutex
 	quotaErr error
 
 	http *http.Client
 }
 
-// quotaSpent возвращает причину, по которой сетевые вызовы закрыты, или nil.
 func (s *shared) quotaSpent() error {
 	s.quotaMu.Lock()
 	defer s.quotaMu.Unlock()
@@ -260,8 +258,6 @@ func (c *Client) Complete(ctx context.Context, req Request) (string, error) {
 	if err := c.cfg.RequireAPIKey(); err != nil {
 		return "", err
 	}
-	// Квота кончилась ещё на прошлом вызове — в сеть не идём, отдаём ту же ошибку сразу.
-	// Проверка стоит после кэша: закэшированное отвечается и с исчерпанной квотой.
 	if err := c.QuotaExhausted(); err != nil {
 		return "", fmt.Errorf("llm call %s (%s): %w", req.Name, modelName, err)
 	}
@@ -441,7 +437,7 @@ func (c *Client) call(ctx context.Context, modelName string, req Request) (compl
 		return completion{}, fmt.Errorf("decode response: %w: %s", err, snippet(raw))
 	}
 	if len(parsed.Choices) == 0 {
-		return completion{}, fmt.Errorf("model returned no choices")
+		return completion{}, errors.New("model returned no choices")
 	}
 	choice := parsed.Choices[0]
 	out := completion{

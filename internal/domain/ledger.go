@@ -36,12 +36,11 @@ func NewLedger(txns []Txn) *Ledger {
 	led := &Ledger{
 		Txns:         txns,
 		ByID:         make(map[string]*Txn, len(txns)),
-		ByScenario:   map[string][]*Txn{},
-		AccountToScn: map[string]string{},
-		ScnToAccount: map[string][]string{},
+		ByScenario:   make(map[string][]*Txn),
+		AccountToScn: make(map[string]string),
+		ScnToAccount: make(map[string][]string),
 	}
-	// Один счёт может встретиться у нескольких сценариев; храним их без повторов.
-	scnsOf := map[string][]string{}
+	scnsOf := make(map[string][]string)
 	for i := range led.Txns {
 		t := &led.Txns[i]
 		led.ByID[t.ID] = t

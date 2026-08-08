@@ -163,7 +163,6 @@ func newCovenantsCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// newReviewCmd — команда-читалка: печатает разбор стора по каждому названному сценарию.
 func newReviewCmd(app *App, use, short string, review func(*store.Store, string) (string, error)) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,
@@ -243,9 +242,6 @@ func newClassifyCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// classifyDegraded описывает деградацию словами: что не дошло до модели и что уцелело от
-// прошлого прогона. Код возврата ненулевой, иначе прогон, не сделавший ни одного вызова,
-// выглядел бы как успешный.
 func classifyDegraded(rep *classify.Report) error {
 	if rep.Kept > 0 {
 		return fmt.Errorf("%d batch(es) never reached the model; %d pattern(s) kept the labels "+
@@ -347,8 +343,6 @@ func newReportCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// errNoUsableOutput помечает стадию, после которой продолжать модельные стадии бессмысленно:
-// они ничего не смогут прочитать и только сожгут квоту.
 var errNoUsableOutput = errors.New("nothing the next stages can use")
 
 type runStage struct {
@@ -374,7 +368,6 @@ func newRunCmd(app *App) *cobra.Command {
 			}
 			client := llm.New(app.Cfg, app.Store, app.Log)
 
-			// ingest — единственная критичная стадия: без леджера и шаблона submission не собрать.
 			ingestLog := app.stageLog("ingest")
 			ingestLog.Info("stage start")
 			ingested, err := ingest.Run(cmd.Context(), ingest.Options{
@@ -387,9 +380,6 @@ func newRunCmd(app *App) *cobra.Command {
 
 			stages := []runStage{
 				{name: "triage", llm: true, fn: func(log *slog.Logger) error {
-					// Ключ здесь намеренно не требуется: кэш ответов отдаётся и без него,
-					// поэтому повторный прогон восстанавливает стадию бесплатно. Промах кэша
-					// без ключа деградирует документ — сети это не касается.
 					rep, err := index.Run(cmd.Context(), index.Options{
 						Cfg: app.Cfg, Store: app.Store, Log: log,
 						Client: client.WithLogger(log),
@@ -498,8 +488,6 @@ func newRunCmd(app *App) *cobra.Command {
 				}
 			}
 
-			// Отсюда и до конца — безусловно. По условию задачи пустая ячейка стоит ровно
-			// столько же, сколько неверная, поэтому файл должен появиться при любом исходе.
 			submitLog := app.stageLog("submit")
 			submitLog.Info("stage start")
 			res, err := submit.Run(submit.Options{Cfg: app.Cfg, Store: app.Store, Log: submitLog})
@@ -628,7 +616,6 @@ func newStatusCmd(app *App) *cobra.Command {
 	}
 }
 
-// submissionAge отвечает на вопрос «этот файл из текущего прогона или лежит с прошлого раза».
 func submissionAge(path string) string {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -690,7 +677,7 @@ func newVersionCmd() *cobra.Command {
 		RunE: func(*cobra.Command, []string) error {
 			info, ok := debug.ReadBuildInfo()
 			if !ok {
-				return fmt.Errorf("build info unavailable")
+				return errors.New("build info unavailable")
 			}
 			rev, dirty := "unknown", ""
 			for _, s := range info.Settings {

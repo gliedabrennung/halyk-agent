@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,9 +11,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// completeWithRepair вызывает модель и разбирает ответ, а при неудачном разборе делает
-// ровно одну повторную попытку с ремонтным промптом. В ошибке остаётся первичная причина
-// отказа: именно она объясняет, чем плох ответ модели. label попадает в текст ошибки.
 func completeWithRepair[T any](
 	ctx context.Context,
 	client *llm.Client,
@@ -45,7 +43,6 @@ func completeWithRepair[T any](
 	return out, nil
 }
 
-// parsePercent читает долю вида "35" или "35 %"; пустая строка даёт ноль без ошибки.
 func parsePercent(raw string) (decimal.Decimal, error) {
 	s := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(raw), "%"))
 	if s == "" {
@@ -57,13 +54,13 @@ func parsePercent(raw string) (decimal.Decimal, error) {
 func parseDecimal(s string) (decimal.Decimal, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return decimal.Zero, fmt.Errorf("empty")
+		return decimal.Zero, errors.New("empty")
 	}
 
 	s = strings.NewReplacer("$", "", " ", "", ",", "", " ", "", "x", "", "X", "").Replace(s)
 	d, err := decimal.NewFromString(s)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("not a decimal")
+		return decimal.Zero, errors.New("not a decimal")
 	}
 	return d, nil
 }
@@ -78,7 +75,7 @@ func parseDate(s string) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("not a date")
+	return time.Time{}, errors.New("not a date")
 }
 
 func stripFence(raw string) string {

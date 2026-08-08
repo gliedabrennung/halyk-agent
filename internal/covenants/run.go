@@ -22,9 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	ArtifactKind = "covenants"
-)
+const ArtifactKind = "covenants"
 
 type Options struct {
 	Cfg    *config.Config
@@ -163,7 +161,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		g.Go(func() error {
 			spec, err := agents.ExtractCovenant(gctx, opts.Client, opts.Cfg.Model, j.input, opts.CriticPasses)
 			if err != nil {
-
 				if gctx.Err() != nil {
 					return gctx.Err()
 				}
@@ -203,7 +200,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		}
 	}
 
-	byScenario := map[string][]*domain.CovenantSpec{}
+	byScenario := make(map[string][]*domain.CovenantSpec)
 	var extracted []*domain.CovenantSpec
 	for _, s := range specs {
 		if s == nil {
@@ -223,7 +220,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		if err := opts.Store.PutArtifact(ArtifactKind+opts.Namespace, scn, list); err != nil {
 			return nil, err
 		}
-		// Пробный прогон в своём namespace на диск не пишет: файлы принадлежат основному.
 		if opts.Namespace != "" {
 			continue
 		}

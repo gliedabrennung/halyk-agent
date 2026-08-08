@@ -3,6 +3,7 @@ package stability
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -79,7 +80,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			return nil, fmt.Errorf("no stored verdicts for %s; run `halyk-agent evaluate` first",
 				strings.Join(opts.Only, ", "))
 		}
-		return nil, fmt.Errorf("no verdicts to compare against; run `halyk-agent evaluate` first")
+		return nil, errors.New("no verdicts to compare against; run `halyk-agent evaluate` first")
 	}
 
 	rep := &Report{Passes: opts.Passes, Cells: len(baseline)}
@@ -146,9 +147,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	return rep, nil
 }
 
-// onlyScenarios оставляет в базе сравнения те ячейки, которые проба и правда переизвлекает.
-// Без этого `--only` показывал непройденных заёмщиков как «not answered» и считал долю
-// стабильных ячеек от всего шаблона: шесть сошедшихся из шести выглядели как 6 из 36.
 func onlyScenarios(baseline map[string]answer, only []string) map[string]answer {
 	out := make(map[string]answer, len(baseline))
 	for key, a := range baseline {
@@ -162,8 +160,6 @@ func onlyScenarios(baseline map[string]answer, only []string) map[string]answer 
 func onePass(ctx context.Context, opts Options, ns string) (map[string]answer, error) {
 	client := llm.NewWithNonce(opts.Cfg, opts.Store, opts.Log, ns)
 
-	// Стадии переживают исчерпание квоты, деградируя, но для пробы стабильности неполный
-	// проход бессмысленен: сравнивать с базовым прогоном можно только целую стадию.
 	quota := func(stage string) error {
 		if err := client.QuotaExhausted(); err != nil {
 			return fmt.Errorf("%s: %w", stage, err)
@@ -268,7 +264,6 @@ func within(a, b decimal.Decimal) bool {
 	return a.Sub(b).Abs().Div(a.Abs()).LessThanOrEqual(_actualTolerance)
 }
 
-// joinWhat печатает виды расхождений в фиксированном порядке, а не в порядке появления.
 func joinWhat(set []string) string {
 	var out []string
 	for _, k := range []string{"status", "actual", "evidence", "missing"} {

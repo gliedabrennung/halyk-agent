@@ -117,9 +117,6 @@ func computeTerm(
 
 	line := strings.ToLower(term.Line)
 
-	// Ветку выбирает объявленный kind терма, а не формулировка пункта. Единственное
-	// исключение — EBITDA: это определение («выручка за вычетом операционных расходов»),
-	// а не вид источника, и модель отдаёт его как обычную строку отчётности.
 	switch {
 	case term.Kind == domain.TermRelatedPartyPayments:
 		return relatedPartyTerm(term, rows)
@@ -152,9 +149,6 @@ func computeTerm(
 	return out, nil
 }
 
-// scopedEntityTerm суммирует строки категории только по контрагентам, чей статус в
-// факт-базе совпадает с объявленным в спеке (restricted / unrestricted). Статус — поле
-// спецификации: движок не выводит его из формулировки пункта.
 func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Category) (termResult, error) {
 	res := termResult{Name: term.Name}
 
@@ -200,9 +194,6 @@ func containsAny(s string, subs ...string) bool {
 	return slices.ContainsFunc(subs, func(sub string) bool { return strings.Contains(s, sub) })
 }
 
-// mentionsEBITDA распознаёт EBITDA и её раскрытые определения. Это словарь синонимов
-// одного показателя, а не подгонка под конкретный договор: терм с такой строкой считается
-// как выручка минус операционные расходы, откуда бы формулировка ни пришла.
 func mentionsEBITDA(line string) bool {
 	if containsAny(line, "ebitda", "прибыль до вычета", "earnings before interest") {
 		return true

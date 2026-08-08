@@ -115,7 +115,6 @@ func (c *cell) Disputed() bool {
 	})
 }
 
-// Critic возвращает реплику критика из трассы, Trace — всё остальное.
 func (c *cell) Critic() string {
 	if c.Verdict == nil {
 		return ""
@@ -238,7 +237,6 @@ func collectBorrower(
 	var warnings []string
 	b := &borrower{ScenarioID: scn, Accounts: led.ScnToAccount[scn], Txns: len(led.ByScenario[scn])}
 
-	// Отчёт рисуется по тому, что есть: недостающая стадия — предупреждение, а не отказ.
 	load := func(kind, what, stage string, dst any) bool {
 		ok, err := opts.Store.GetArtifact(kind, scn, dst)
 		switch {
@@ -279,7 +277,7 @@ func collectBorrower(
 		}
 	}
 
-	specs := map[string]*domain.CovenantSpec{}
+	specs := make(map[string]*domain.CovenantSpec)
 	var list []*domain.CovenantSpec
 	if load(covenants.ArtifactKind, "covenant specifications", "covenants", &list) {
 		for _, s := range list {

@@ -44,7 +44,6 @@ func HasTesseract() bool {
 	return err == nil
 }
 
-// run выполняет внешнюю утилиту и возвращает её stdout; stderr уходит в текст ошибки.
 func run(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var out, errBuf bytes.Buffer

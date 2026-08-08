@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"fmt"
+	"errors"
 	"slices"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
@@ -17,10 +17,10 @@ const BaselineStatus = domain.StatusCompliant
 
 func BaselineVerdicts(tpl *domain.Template, led *domain.Ledger) ([]domain.Verdict, error) {
 	if tpl == nil || len(tpl.Cells) == 0 {
-		return nil, fmt.Errorf("template has no cells")
+		return nil, errors.New("template has no cells")
 	}
 	if led == nil {
-		return nil, fmt.Errorf("ledger is nil")
+		return nil, errors.New("ledger is nil")
 	}
 
 	medians := make(map[string]decimal.Decimal, len(led.ByScenario))

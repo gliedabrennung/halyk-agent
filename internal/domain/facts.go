@@ -5,19 +5,13 @@ import (
 )
 
 const (
-	AdjReclassify = "reclassify"
-
-	AdjExcludePeriod = "exclude_period"
-
-	AdjIncludePeriod = "include_period"
-
+	AdjReclassify      = "reclassify"
+	AdjExcludePeriod   = "exclude_period"
+	AdjIncludePeriod   = "include_period"
 	AdjDisclosedAmount = "disclosed_amount"
-
 	AdjLedgerAmountFix = "ledger_amount_fix"
-
-	AdjEBITDAAddBack = "ebitda_add_back"
-
-	AdjNoChange = "no_change"
+	AdjEBITDAAddBack   = "ebitda_add_back"
+	AdjNoChange        = "no_change"
 )
 
 type Adjustment struct {

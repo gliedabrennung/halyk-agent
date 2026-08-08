@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,8 +48,6 @@ func (c *Config) GroundTruthPath() string { return filepath.Join(c.DataDir, "gro
 
 func (c *Config) SubmissionPath() string { return filepath.Join(c.OutDir, "submission.json") }
 
-// eachLine вызывает fn на каждой значимой строке файла, пропуская пустые и комментарии.
-// Отсутствие файла ошибкой не считается — fn просто не вызывается ни разу.
 func eachLine(path string, fn func(line int, text string) error) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -184,7 +183,7 @@ func (c *Config) CheckDataset() error {
 
 func (c *Config) RequireAPIKey() error {
 	if c.APIKey == "" {
-		return fmt.Errorf("LLM_API_KEY is not set (GOOGLE_API_KEY also works); required for LLM stages")
+		return errors.New("LLM_API_KEY is not set (GOOGLE_API_KEY also works); required for LLM stages")
 	}
 	return nil
 }

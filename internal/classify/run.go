@@ -3,6 +3,7 @@ package classify
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,25 +24,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const ArtifactKind = "labels"
-
 const (
+	ArtifactKind        = "labels"
 	PatternArtifactKind = "label_patterns"
 	PatternArtifactID   = "corpus"
 )
 
-// Откуда взялась разметка паттерна. Всё, кроме SourceRule, означает, что категорию назвала
-// модель; SourceRule — что батч до модели не дошёл и ответило keyword-правило.
 const (
 	SourceLLM       = "llm"
 	SourceRuleLLM   = "rule+llm"
 	SourceEscalated = "escalated"
 	SourceRule      = "rule"
 )
-
-func modelSettled(source string) bool {
-	return source == SourceLLM || source == SourceRuleLLM || source == SourceEscalated
-}
 
 type Options struct {
 	Cfg    *config.Config
@@ -66,7 +60,6 @@ type Report struct {
 	Unknown     int `json:"unknown"`
 	Calls       int `json:"calls"`
 
-	// Kept — паттерны, чью прежнюю разметку этот прогон не стал портить своей деградацией.
 	Kept int `json:"kept"`
 
 	Rows     []Row    `json:"rows"`
@@ -75,11 +68,23 @@ type Report struct {
 	Path     string   `json:"path"`
 }
 
-// keepBetter не даёт прогону, который не дошёл до модели, затереть разметку, которую модель
-// уже подтвердила: упавший батч отдаёт паттерну source "rule", и записывать его поверх
-// прежнего ответа модели — чистая потеря. Обратной блокировки нет, свежий ответ модели всегда
-// заменяет прежний. Классификация берётся прежняя, а счётчики, образцы и сработавшее правило —
-// от этого прогона: они описывают сегодняшний леджер.
+type Row struct {
+	ScenarioID string `json:"scenario_id"`
+	Txns       int    `json:"txns"`
+	Related    int    `json:"related"`
+	Adjusted   int    `json:"adjusted"`
+	Unknown    int    `json:"unknown"`
+	Top        string `json:"top"`
+}
+
+func (r *Report) OK() bool { return r.Unknown == 0 }
+
+func (r *Report) Degraded() bool { return len(r.Failed) > 0 }
+
+func modelSettled(source string) bool {
+	return source == SourceLLM || source == SourceRuleLLM || source == SourceEscalated
+}
+
 func keepBetter(labels, stored []domain.Label) int {
 	if len(stored) == 0 {
 		return 0
@@ -106,21 +111,6 @@ func keepBetter(labels, stored []domain.Label) int {
 	return kept
 }
 
-type Row struct {
-	ScenarioID string `json:"scenario_id"`
-	Txns       int    `json:"txns"`
-	Related    int    `json:"related"`
-	Adjusted   int    `json:"adjusted"`
-	Unknown    int    `json:"unknown"`
-	Top        string `json:"top"`
-}
-
-func (r *Report) OK() bool { return r.Unknown == 0 }
-
-// Degraded — хотя бы один батч до модели не дошёл. Разметка там либо от keyword-правил, либо
-// оставлена от прошлого прогона; ни то, ни другое не должно уходить молча.
-func (r *Report) Degraded() bool { return len(r.Failed) > 0 }
-
 func Run(ctx context.Context, opts Options) (*Report, error) {
 	start := time.Now()
 
@@ -139,7 +129,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		}
 	}
 	if len(scoped) == 0 {
-		return nil, fmt.Errorf("the ledger holds no transactions for the template's scenarios")
+		return nil, errors.New("the ledger holds no transactions for the template's scenarios")
 	}
 
 	patterns := groupPatterns(scoped)
@@ -166,8 +156,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 	rep.Path = dir
 
-	err = opts.Store.PutArtifact(PatternArtifactKind+opts.Namespace, PatternArtifactID, labels)
-	if err != nil {
+	if err := opts.Store.PutArtifact(PatternArtifactKind+opts.Namespace, PatternArtifactID, labels); err != nil {
 		return nil, err
 	}
 	if opts.Namespace == "" {
@@ -291,8 +280,6 @@ func labelPatterns(
 				if gctx.Err() != nil {
 					return gctx.Err()
 				}
-				// Батч теряем, но не всю классификацию: эти шаблоны размечает keyword-правило,
-				// а то, что правило не покрывает, останется unknown и попадёт в отчёт.
 				opts.Log.Error("pattern batch failed; falling back to the keyword rules",
 					"from", lo, "to", hi-1, "err", err)
 				mu.Lock()
@@ -353,8 +340,6 @@ func labelPatterns(
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			// Эскалация — уточнение, а не источник разметки: без неё остаётся ответ быстрой
-			// модели, а где его нет — правило.
 			opts.Log.Error("escalation batch failed; keeping the fast model's answer",
 				"from", lo, "to", hi-1, "err", err)
 			rep.Failed = append(rep.Failed, fmt.Sprintf("escalation %d-%d: %v", lo, hi-1, err))
@@ -510,9 +495,6 @@ func markAdjustments(
 		if adj.TxnID == "" && adj.Counterparty == "" && !adj.Amount.IsPositive() {
 			continue
 		}
-		// Три ключа по убыванию точности и по возрастанию надёжности. txn_id точнее всего,
-		// но его легко выдумать; имя контрагента приходит из текстового слоя документа и
-		// бывает искажено; сумма — цифра, которую и модель, и документ обычно передают верно.
 		idx := -1
 		if adj.TxnID != "" {
 			i, ok := byID[adj.TxnID]
@@ -563,13 +545,6 @@ func markAdjustments(
 	return warnings
 }
 
-// contradictsRow сообщает, что названный моделью txn_id указывает не туда: строка нашлась, но
-// её контрагент и сумма спорят с тем, что говорит само раскрытие. Существующий id — не повод
-// не проверять его: модель придумывает не только небывшие идентификаторы, но и вполне
-// существующие, и тогда корректировка аудитора садится на постороннюю строку молча.
-//
-// Сумму не сверяем у ledger_amount_fix: такая корректировка ровно затем и нужна, что суммы у
-// строки в выгрузке нет.
 func contradictsRow(adj domain.Adjustment, tl domain.TxnLabel, amountOf map[string]decimal.Decimal) bool {
 	if adj.Counterparty != "" && !similarName(adj.Counterparty, tl.Counterparty) {
 		return true
@@ -580,12 +555,6 @@ func contradictsRow(adj domain.Adjustment, tl domain.TxnLabel, amountOf map[stri
 	return !amountOf[tl.TxnID].Abs().Equal(adj.Amount.Abs())
 }
 
-// rowForAmount ищет единственную строку, у которой сходится и сумма, и — если корректировка
-// вообще называет контрагента — название. Одной суммы недостаточно: в этом реестре суммы
-// внутри заёмщика уникальны, но в реестре, где повторяются аренда и круглые числа, «та же
-// сумма» привязала бы корректировку аудитора к посторонней строке, и та строка молча ушла бы
-// в reclassified и в подбор evidence. Когда контрагент не назван, сравнивать нечего и решает
-// сумма. Двусмысленность отсекается.
 func rowForAmount(adj domain.Adjustment, set *domain.LabelSet, amountOf map[string]decimal.Decimal) int {
 	hit := -1
 	for i, tl := range set.Txns {
@@ -603,13 +572,8 @@ func rowForAmount(adj domain.Adjustment, set *domain.LabelSet, amountOf map[stri
 	return hit
 }
 
-// _nameSimilarity — доля совпадающих символов, при которой два написания считаются одной
-// организацией. Ниже — разные организации.
 const _nameSimilarity = 0.6
 
-// similarName сообщает, что два названия — скорее всего одна организация, набранная
-// по-разному: текстовый слой документа теряет символы, путает алфавиты и рвёт слова.
-// Достаточно уцелевшего значимого слова либо малого расстояния Левенштейна.
 func similarName(a, b string) bool {
 	ka, kb := domain.EntityKey(a), domain.EntityKey(b)
 	if ka == "" || kb == "" {
@@ -629,7 +593,6 @@ func similarName(a, b string) bool {
 	return float64(longest-editDistance(ra, rb))/float64(longest) >= _nameSimilarity
 }
 
-// editDistance — расстояние Левенштейна на рунах, две строки таблицы вместо матрицы.
 func editDistance(a, b []rune) int {
 	prev := make([]int, len(b)+1)
 	curr := make([]int, len(b)+1)
@@ -650,8 +613,6 @@ func editDistance(a, b []rune) int {
 	return prev[len(b)]
 }
 
-// rowForCounterparty находит единственную строку контрагента; когда их несколько, различает
-// по сумме корректировки. Возвращает -1, если однозначного совпадения нет.
 func rowForCounterparty(
 	adj domain.Adjustment,
 	set *domain.LabelSet,

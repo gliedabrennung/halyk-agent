@@ -2,6 +2,7 @@ package covenants
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -32,7 +33,7 @@ type articleOccurrence struct {
 func Article(text string, n int) (Section, error) {
 	occs := articleOccurrences(text)
 	if len(occs) == 0 {
-		return Section{}, fmt.Errorf("no article headings found")
+		return Section{}, errors.New("no article headings found")
 	}
 
 	var best Section
@@ -114,7 +115,7 @@ func PageOf(text string, offset int) int {
 
 func CovenantArticleFor(text string, clauseIDs []string) (Section, error) {
 	if len(clauseIDs) == 0 {
-		return Section{}, fmt.Errorf("no clause ids requested")
+		return Section{}, errors.New("no clause ids requested")
 	}
 
 	if n, ok := articleNumberOf(clauseIDs[0]); ok {

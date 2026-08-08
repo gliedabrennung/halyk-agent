@@ -6,9 +6,6 @@ import (
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 )
 
-// Rows the export left without an amount are named to the model so it can look
-// the figure up in the documents. Missing one reports the row as zero, which
-// silently understates every total it belongs to.
 func TestMissingAmountTxnsNamesOnlyThisBorrowersBlankRows(t *testing.T) {
 	txns := []domain.Txn{
 		{ID: "TXN-P8-0031", ScenarioID: "P8", AmountMissing: true},

@@ -14,24 +14,17 @@ type Rule struct {
 	Contra bool
 }
 
-// fired отличает сработавшее правило от нулевого Rule.
 func (r Rule) fired() bool { return r.ID != "" }
 
 func rule(id, expr string, cat domain.Category, contra bool) Rule {
 	return Rule{ID: id, Re: regexp.MustCompile(`(?i)` + expr), Cat: cat, Contra: contra}
 }
 
-// Словарь возврата: слова, которыми документ описывает движение денег обратно по ранее
-// понесённому расходу. Правило contra строится как «словарь категории + словарь возврата»,
-// а не как список заученных описаний из конкретного реестра: иначе такое правило работает
-// ровно на том корпусе, по которому его выписали.
 const (
 	_reversal = `(refund|refunded|rebate|reversal|reversed|recovered|recovery|reclaim|` +
 		`returned|\breturn\b|released|sweep back|write-back|writeback|` +
 		`credit note|credit received|funding received)`
 
-	// _reversalLoose добавляет одиночное «credit». Для процентов его брать нельзя:
-	// «interest on export credit line» — это кредитная линия, а не возврат процентов.
 	_reversalLoose = `(` + _reversal + `|\bcredit\b)`
 )
 
@@ -45,7 +38,6 @@ var _rules = []Rule{
 	rule("interest.income", `interest (income|credited|earned)`, domain.CatInterestIncome, false),
 	rule("interest.expense", `\binterest\b`, domain.CatInterestExpense, false),
 
-	// Выплата страховщика по убытку — доход, а не возврат премии, поэтому идёт до contra.
 	rule("insurance.claim", `insurance.*(claim|deductible).*(reimburs|recovery|payout|settle)`,
 		domain.CatOtherIncome, false),
 	rule("insurance.contra", `(insurance|premium|fidelity bond).*`+_reversalLoose,

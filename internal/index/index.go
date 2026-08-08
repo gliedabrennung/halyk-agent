@@ -1,6 +1,7 @@
 package index
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -297,7 +298,7 @@ func Load(st *store.Store) (*Index, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("no document index; run `halyk-agent triage` first")
+		return nil, errors.New("no document index; run `halyk-agent triage` first")
 	}
 	return &idx, nil
 }

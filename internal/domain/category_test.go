@@ -2,8 +2,6 @@ package domain
 
 import "testing"
 
-// Строка, в которой сходятся два признака, разрешается по самому длинному совпадению, а не по
-// порядку записей в таблице. Иначе перестановка таблицы молча меняла бы категорию.
 func TestCategoryForLinePrefersTheLongestMatch(t *testing.T) {
 	cases := []struct {
 		line string
@@ -32,7 +30,6 @@ func TestCategoryForLineRejectsWhatItCannotMap(t *testing.T) {
 	}
 }
 
-// Порядок записей в таблице псевдонимов не должен влиять на результат.
 func TestCategoryForLineIsIndependentOfAliasOrder(t *testing.T) {
 	const line = "капитальных активов, переданных дочерним организациям"
 	want, _ := CategoryForLine(line)

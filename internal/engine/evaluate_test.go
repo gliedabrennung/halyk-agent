@@ -316,8 +316,6 @@ func TestEvaluateCountsOnlyUnrestrictedTransfers(t *testing.T) {
 	}
 }
 
-// Без объявленного скоупа терм считается по всем контрагентам: движок не достаёт статус
-// из формулировки пункта, даже когда та прямо называет неограниченные организации.
 func TestTransfersAreNotNarrowedWithoutADeclaredScope(t *testing.T) {
 	in := &Inputs{
 		Facts: &domain.FactBase{Parties: []domain.Party{

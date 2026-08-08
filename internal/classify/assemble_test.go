@@ -23,7 +23,6 @@ func txn(id, counterparty, description, amount string) *domain.Txn {
 	}
 }
 
-// blankAmountTxn — строка, у которой выгрузка не дала суммы; её и чинит ledger_amount_fix.
 func blankAmountTxn(id, counterparty, description string) *domain.Txn {
 	t := txn(id, counterparty, description, "0")
 	t.AmountMissing = true
@@ -230,8 +229,6 @@ func TestAssembleFailsOnUnlabelledPattern(t *testing.T) {
 	}
 }
 
-// Модель иногда выдумывает txn_id, которого в леджере нет (реальный случай: B1, TXN-B1-0634
-// вместо TXN-B1-0020). Корректировку это терять не должно: контрагент и сумма на месте.
 func TestAssembleFallsBackToCounterpartyWhenTheTxnIDIsInvented(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",
@@ -271,7 +268,6 @@ func TestAssembleFallsBackToCounterpartyWhenTheTxnIDIsInvented(t *testing.T) {
 	}
 }
 
-// Выдуманный id и контрагент, который ни с чем не сходится: пометить нечего.
 func TestAssembleLeavesAnInventedTxnIDUnmarkedWhenNothingElseMatches(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",
@@ -296,8 +292,6 @@ func TestAssembleLeavesAnInventedTxnIDUnmarkedWhenNothingElseMatches(t *testing.
 	}
 }
 
-// Текстовый слой документа исказил имя контрагента (реальный случай: P4, «ПеК Restoration
-// Works LLP» вместо «Ilek Restoration Works LLP»). Сумма при этом цела и уникальна.
 func TestAssembleMatchesOnAmountWhenTheNameIsCorrupted(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",
@@ -335,7 +329,6 @@ func TestAssembleMatchesOnAmountWhenTheNameIsCorrupted(t *testing.T) {
 	}
 }
 
-// Та же сумма у двух строк — опознать нечем, лучше не пометить ничего.
 func TestAssembleWillNotGuessBetweenTwoRowsOfTheSameAmount(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",
@@ -363,9 +356,6 @@ func TestAssembleWillNotGuessBetweenTwoRowsOfTheSameAmount(t *testing.T) {
 	}
 }
 
-// Сумма сошлась, а название — чужое. В этом корпусе суммы внутри заёмщика уникальны, поэтому
-// одной суммы «хватило бы»; именно так корректировка аудитора и привязалась бы к посторонней
-// строке в реестре, где суммы повторяются. Название решает.
 func TestAssembleWillNotMatchAnUnrelatedNameOnTheAmountAlone(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",
@@ -417,10 +407,6 @@ func TestSimilarName(t *testing.T) {
 	}
 }
 
-// Реальный случай B1: модель назвала txn_id, который существует, но принадлежит другой строке
-// — другой контрагент, другой знак, другая сумма. Раскрытие при этом называет и контрагента, и
-// сумму, и они однозначно указывают на настоящую строку. Существующий id не должен побеждать
-// два сходящихся признака: так реклассификация аудитора садится на постороннюю строку молча.
 func TestAssembleDistrustsATxnIDThatContradictsTheDisclosure(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",
@@ -461,7 +447,6 @@ func TestAssembleDistrustsATxnIDThatContradictsTheDisclosure(t *testing.T) {
 	}
 }
 
-// А непротиворечивый txn_id по-прежнему решает: он точнее имени и суммы.
 func TestAssembleKeepsATxnIDThatAgreesWithTheDisclosure(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P1",

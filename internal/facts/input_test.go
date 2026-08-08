@@ -52,10 +52,6 @@ func buildFor(t *testing.T, st *store.Store, idx *index.Index, scenario string) 
 	return buildInput(t.Context(), opts, idx, scenario)
 }
 
-// A borrower's file is assembled from documents whose type always matters plus
-// any document that names one of its transactions. Anything belonging to
-// another borrower must stay out — a stray audit report would carry another
-// company's adjustments into this covenant.
 func TestBuildInputPicksDocumentsByTypeAndByTransactionReference(t *testing.T) {
 	st := testStore(t, map[string][]string{
 		"audit":     {"Аудиторское заключение по P1."},
@@ -88,8 +84,6 @@ func TestBuildInputPicksDocumentsByTypeAndByTransactionReference(t *testing.T) {
 	}
 }
 
-// An ineffective document is a superseded revision. Reading it would apply an
-// adjustment the auditor has already withdrawn.
 func TestBuildInputIgnoresSupersededDocuments(t *testing.T) {
 	st := testStore(t, map[string][]string{
 		"current": {"Действующее заключение."},
@@ -112,9 +106,6 @@ func TestBuildInputIgnoresSupersededDocuments(t *testing.T) {
 	}
 }
 
-// The parent's consolidated statements are the only place a group figure
-// exists, and they are attached apart from the borrower's own file so that the
-// prompt can say they describe the group, not this borrower.
 func TestBuildInputAttachesTheGroupParentSeparately(t *testing.T) {
 	st := testStore(t, map[string][]string{
 		"audit":  {"Заключение по P5."},
@@ -142,8 +133,6 @@ func TestBuildInputAttachesTheGroupParentSeparately(t *testing.T) {
 	}
 }
 
-// A borrower with nothing to read is an error, not an empty fact base: silently
-// returning nothing would report every disclosure as absent.
 func TestBuildInputRefusesABorrowerWithNoReadableFile(t *testing.T) {
 	st := testStore(t, map[string][]string{"other": {"Чужой документ."}})
 	idx := &index.Index{

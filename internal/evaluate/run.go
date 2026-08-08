@@ -94,7 +94,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Спеки из стора могут быть старше полей, которые читает движок.
 		for _, spec := range specs {
 			for _, note := range covenants.Normalise(spec) {
 				opts.Log.Warn("specification normalised on load",
@@ -119,7 +118,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			Txns:       normaliseFX(byScenario[scn], &fb, fallbackFX, opts.Log),
 		}
 
-		specByClause := map[string]*domain.CovenantSpec{}
+		specByClause := make(map[string]*domain.CovenantSpec)
 		for _, s := range specs {
 			specByClause[s.ClauseID] = s
 		}
@@ -226,13 +225,9 @@ func criticNote(r review) string {
 	return "disputed:" + r.issue
 }
 
-// normaliseFX приводит суммы к долларам. Курс, раскрытый в документах самого заёмщика,
-// идёт первым; общий на весь корпус курс из config/fx.yaml — только вторым и с записью в
-// журнал: это константа, вынутая из одного документа, и в отчёте о прогоне она должна быть
-// видна, а не применяться молча.
 func normaliseFX(txns []domain.Txn, fb *domain.FactBase, fallback map[string]decimal.Decimal, log *slog.Logger) []domain.Txn {
 	warned := make(map[string]bool)
-	rateFor := func(cur string, txnID string) (decimal.Decimal, bool) {
+	rateFor := func(cur, txnID string) (decimal.Decimal, bool) {
 		if fb != nil {
 			if rate, ok := fb.FXRates[cur]; ok && rate.IsPositive() {
 				return rate, true

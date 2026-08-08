@@ -3,6 +3,7 @@ package ingest
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -99,7 +100,7 @@ func parseTemplateBytes(raw []byte) (*domain.Template, error) {
 		return nil, fmt.Errorf("template has no \"answers\" object")
 	}
 	if len(tpl.Cells) == 0 {
-		return nil, fmt.Errorf("template has no answer cells")
+		return nil, errors.New("template has no answer cells")
 	}
 	return tpl, nil
 }
@@ -157,7 +158,7 @@ func LoadTemplateAndTxns(cfg *config.Config, st *store.Store) (*domain.Template,
 		return nil, nil, err
 	}
 	if len(txns) == 0 {
-		return nil, nil, fmt.Errorf("no transactions in the store; run `halyk-agent ingest` first")
+		return nil, nil, errors.New("no transactions in the store; run `halyk-agent ingest` first")
 	}
 	return tpl, txns, nil
 }

@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -78,7 +79,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return nil, err
 	}
 	if len(docs) == 0 {
-		return nil, fmt.Errorf("no documents in the store; run `halyk-agent ingest` first")
+		return nil, errors.New("no documents in the store; run `halyk-agent ingest` first")
 	}
 	if len(opts.Only) > 0 {
 		var filtered []domain.Document
@@ -103,8 +104,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 
 	for i, doc := range docs {
 		g.Go(func() error {
-			// Сбой одного документа не отменяет триаж остальных: документ остаётся в индексе
-			// нераспознанным. Недостающий договор поймает CheckCoverage.
 			degrade := func(err error) error {
 				if gctx.Err() != nil {
 					return gctx.Err()

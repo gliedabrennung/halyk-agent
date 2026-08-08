@@ -84,9 +84,8 @@ type Term struct {
 
 	EntitySource string `json:"entity_source,omitempty"`
 
-	// EntityScope сужает терм до контрагентов с этим статусом в факт-базе:
-	// StatusRestricted, StatusUnrestricted или пусто — все контрагенты.
-	// Объявляется спецификацией; движок его не выводит из текста пункта.
+	// EntityScope сужает терм до контрагентов с этим статусом: StatusRestricted,
+	// StatusUnrestricted или пусто — все контрагенты.
 	EntityScope string `json:"entity_scope,omitempty"`
 
 	Direction string          `json:"direction,omitempty"`

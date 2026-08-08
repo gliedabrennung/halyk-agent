@@ -404,8 +404,6 @@ func appendix(r *renderer, d *dossier) {
 	r.kv("generated", d.Generated.Format(time.RFC3339))
 }
 
-// submissionLabel называет файл вместе со временем записи: отчёт рисуется по тому, что лежит
-// на диске, и по нему должно быть видно, из того ли он прогона.
 func submissionLabel(d *dossier) string {
 	if d.SubmissionAge.IsZero() {
 		return d.SubmissionPath

@@ -45,6 +45,17 @@ func ExprIdentifiers(expr string) ([]string, error) {
 	return out, nil
 }
 
+const _divisionScale = 16
+
+var _conditionOps = []string{">=", "<=", "==", "!=", ">", "<"}
+
+var (
+	errDivByZero    = errors.New("division by zero")
+	errValueWanted  = errors.New("expression ends where a value was expected")
+	errUnclosedExpr = errors.New("missing closing parenthesis")
+	errEmptyCond    = errors.New("empty condition")
+)
+
 type tokKind int
 
 const (
@@ -67,7 +78,6 @@ func isFunc(s string) bool { return s == "max" || s == "min" }
 func tokenize(s string) ([]token, error) {
 	var out []token
 	rs := []rune(s)
-	// Длина пробега рун от i, пока они удовлетворяют ok.
 	run := func(i int, ok func(rune) bool) int {
 		j := i
 		for j < len(rs) && ok(rs[j]) {
@@ -147,8 +157,6 @@ func (p *parser) parseExpr() (decimal.Decimal, error) {
 	}
 }
 
-const _divisionScale = 16
-
 func (p *parser) parseTerm() (decimal.Decimal, error) {
 	left, err := p.parseFactor()
 	if err != nil {
@@ -176,14 +184,12 @@ func (p *parser) parseTerm() (decimal.Decimal, error) {
 	}
 }
 
-var errDivByZero = errors.New("division by zero")
-
 func IsDivByZero(err error) bool { return errors.Is(err, errDivByZero) }
 
 func (p *parser) parseFactor() (decimal.Decimal, error) {
 	t, ok := p.peek()
 	if !ok {
-		return decimal.Zero, fmt.Errorf("expression ends where a value was expected")
+		return decimal.Zero, errValueWanted
 	}
 	if t.kind == tokOp {
 		switch t.text {
@@ -205,7 +211,7 @@ func (p *parser) parseFactor() (decimal.Decimal, error) {
 func (p *parser) parsePrimary() (decimal.Decimal, error) {
 	t, ok := p.peek()
 	if !ok {
-		return decimal.Zero, fmt.Errorf("expression ends where a value was expected")
+		return decimal.Zero, errValueWanted
 	}
 	switch t.kind {
 	case tokNumber:
@@ -230,7 +236,7 @@ func (p *parser) parsePrimary() (decimal.Decimal, error) {
 			return decimal.Zero, err
 		}
 		if nt, ok := p.peek(); !ok || nt.kind != tokRParen {
-			return decimal.Zero, fmt.Errorf("missing closing parenthesis")
+			return decimal.Zero, errUnclosedExpr
 		}
 		p.pos++
 		return v, nil
@@ -279,12 +285,10 @@ func (p *parser) parseCall(name string) (decimal.Decimal, error) {
 	return slices.MinFunc(args, decimal.Decimal.Cmp), nil
 }
 
-var _conditionOps = []string{">=", "<=", "==", "!=", ">", "<"}
-
 func EvalCondition(cond string, vars map[string]decimal.Decimal) (bool, error) {
 	cond = strings.TrimSpace(cond)
 	if cond == "" {
-		return false, fmt.Errorf("empty condition")
+		return false, errEmptyCond
 	}
 	for _, op := range _conditionOps {
 		i := strings.Index(cond, op)
@@ -318,6 +322,7 @@ func Compare(left decimal.Decimal, op string, right decimal.Decimal) bool {
 		return left.Equal(right)
 	case "!=":
 		return !left.Equal(right)
+	default:
+		return false
 	}
-	return false
 }

@@ -10,9 +10,6 @@ import (
 
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 
-// The applied/rejected split is the one number a reader checks first: a
-// disclosure the auditor considered and refused must never be counted as one
-// they accepted.
 func TestSummariseSeparatesAppliedFromRejected(t *testing.T) {
 	fb := &domain.FactBase{
 		ScenarioID: "P4",
@@ -36,8 +33,6 @@ func TestSummariseSeparatesAppliedFromRejected(t *testing.T) {
 	}
 }
 
-// Relatedness is decided by the threshold, and a borrower whose file states
-// none must show that rather than an invented zero.
 func TestSummariseCountsRelatedPartiesAgainstTheThreshold(t *testing.T) {
 	parties := []domain.Party{
 		{Name: "Alpha LLP", VotingShare: dec("33.4"), Related: true},
@@ -87,8 +82,6 @@ func TestReportOKOnlyWhenNoBorrowerFailed(t *testing.T) {
 	}
 }
 
-// The stage summary is what a human reads before trusting the run, so it has to
-// carry the failure, not bury it.
 func TestReportStringShowsFailures(t *testing.T) {
 	rep := &Report{
 		Scenarios: 1,

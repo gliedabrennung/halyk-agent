@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -155,7 +156,7 @@ func buildSpec(cj *covenantJSON, in CovenantInput) (*domain.CovenantSpec, error)
 		Confidence:   cj.Confidence,
 	}
 	if spec.Expression == "" {
-		return nil, fmt.Errorf("expression is empty")
+		return nil, errors.New("expression is empty")
 	}
 	switch spec.Op {
 	case "<=", ">=", "<", ">":
@@ -190,7 +191,7 @@ func buildSpec(cj *covenantJSON, in CovenantInput) (*domain.CovenantSpec, error)
 			Direction:        strings.TrimSpace(t.Direction),
 		}
 		if term.Name == "" {
-			return nil, fmt.Errorf("a term has no name")
+			return nil, errors.New("a term has no name")
 		}
 		if !validTermKind(term.Kind) {
 			return nil, fmt.Errorf("term %q has kind %q, which is not allowed", term.Name, term.Kind)
@@ -303,9 +304,6 @@ func normaliseEntitySource(kind domain.TermKind, v string) string {
 	return ""
 }
 
-// normaliseEntityScope принимает статус контрагента, к которому пункт сужает терм.
-// Незнакомое значение — ошибка, а не пустая строка: молча снять сужение значит посчитать
-// терм по всем контрагентам и выдать другое число без единого следа.
 func normaliseEntityScope(v string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "", "any", "all", "none":

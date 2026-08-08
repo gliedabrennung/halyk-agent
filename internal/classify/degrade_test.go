@@ -13,8 +13,6 @@ import (
 	"github.com/gliedabrennung/halyk-agent/internal/store"
 )
 
-// Модель недоступна (ключа нет), поэтому и основной батч, и эскалация обязаны упасть.
-// Стадия при этом должна не вернуть ошибку, а разметить шаблоны keyword-правилами.
 func TestPatternBatchFailureFallsBackToRules(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

@@ -92,9 +92,6 @@ func TestClassifyReportsNoMatch(t *testing.T) {
 	}
 }
 
-// Правила contra построены как «словарь категории + словарь возврата», поэтому обязаны
-// срабатывать на формулировках, которых в этом корпусе нет. Если такой тест падает — правило
-// снова выродилось в список заученных описаний.
 func TestContraRulesGeneraliseBeyondTheCorpusWording(t *testing.T) {
 	tests := []struct {
 		pattern string
@@ -110,7 +107,6 @@ func TestContraRulesGeneraliseBeyondTheCorpusWording(t *testing.T) {
 		{"sponsorship contribution refunded after cancellation", domain.CatMarketing, true},
 		{"broadband outage credit note", domain.CatTelecom, true},
 
-		// А это по-прежнему расходы и доходы, не возвраты.
 		{"interest on export credit line", domain.CatInterestExpense, false},
 		{"credit facility interest", domain.CatInterestExpense, false},
 		{"interest earned on escrow balance", domain.CatInterestIncome, false},
@@ -134,9 +130,6 @@ func lbl(pattern string, cat domain.Category, source string) domain.Label {
 	return domain.Label{Pattern: pattern, Category: cat, Source: source, Confidence: 0.9}
 }
 
-// Прогон, не дошедший до модели, не должен уносить с собой разметку, которую модель уже
-// подтвердила: именно так исчерпание суточной квоты один раз переписало все метки корпуса
-// с rule+llm на rule.
 func TestKeepBetterRefusesToDowngradeSettledLabels(t *testing.T) {
 	stored := []domain.Label{
 		lbl("management advisory retainer", domain.CatProfessionalService, SourceRuleLLM),
@@ -145,15 +138,10 @@ func TestKeepBetterRefusesToDowngradeSettledLabels(t *testing.T) {
 		lbl("sales settlement", domain.CatRevenue, SourceLLM),
 	}
 	fresh := []domain.Label{
-		// Батч упал: правило назвало ту же категорию, но это уже не ответ модели.
 		lbl("management advisory retainer", domain.CatProfessionalService, SourceRule),
-		// Правило ошибается там, где модель раньше разобралась.
 		lbl("interest credited on current account", domain.CatInterestExpense, SourceRule),
-		// Прежняя разметка сама была правилом — беречь нечего.
 		lbl("office rent", domain.CatRent, SourceRule),
-		// Модель ответила заново: свежий ответ главнее прежнего.
 		lbl("sales settlement", domain.CatOtherIncome, SourceLLM),
-		// Паттерна раньше не было.
 		lbl("quay wall survey", domain.CatOperatingCosts, SourceRule),
 	}
 

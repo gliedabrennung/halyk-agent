@@ -24,8 +24,6 @@ func TestNormaliseKeepsADeclaredScopeAndDropsAnInvalidOne(t *testing.T) {
 	}
 }
 
-// Скоуп берётся только из спеки. Формулировка пункта его больше не задаёт — ни в ту сторону,
-// ни в обратную, — поэтому терм, где статус лишь упомянут словами, остаётся без сужения.
 func TestNormaliseNeverReadsAScopeOutOfTheWording(t *testing.T) {
 	spec := &domain.CovenantSpec{Terms: []domain.Term{
 		{

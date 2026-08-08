@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// Старая схема без amount_missing/empty_pages — проверяем, что migrate их добавит.
 func TestMigrateAddsMissingColumns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	db, err := sql.Open("sqlite", path)

@@ -74,7 +74,6 @@ func TestOnlyScenariosNarrowsTheComparisonBase(t *testing.T) {
 			t.Errorf("%s does not belong to the probed scenarios", key)
 		}
 	}
-	// P10 не должен попасть из-за общего префикса с P1.
 	if _, ok := onlyScenarios(base, []string{"P1"})["P10/6.1"]; ok {
 		t.Error("P10 matched a probe of P1")
 	}
