@@ -80,10 +80,6 @@ type termResult struct {
 	Trace        string
 
 	Unmeasurable bool
-
-	// Provisional: терм посчитан по признаку, восстановленному кодом, а не объявленному
-	// спецификацией. Считается, но уверенность ячейки ограничивается.
-	Provisional bool
 }
 
 func computeTerms(
@@ -160,7 +156,7 @@ func computeTerm(
 // факт-базе совпадает с объявленным в спеке (restricted / unrestricted). Статус — поле
 // спецификации: движок не выводит его из формулировки пункта.
 func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Category) (termResult, error) {
-	res := termResult{Name: term.Name, Provisional: term.ScopeInferred}
+	res := termResult{Name: term.Name}
 
 	inScope := make(map[string]bool)
 	if in.Facts != nil {
@@ -196,10 +192,6 @@ func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Categ
 	if res.Trace == "" {
 		res.Trace = fmt.Sprintf("%s = %s over %d %s row(s) booked to a %s counterparty",
 			term.Name, res.Value.StringFixed(2), len(res.Contributors), cat, term.EntityScope)
-	}
-	if term.ScopeInferred {
-		res.Trace += fmt.Sprintf("  [scope %q was read off the clause wording, not declared by the "+
-			"specification; re-run `covenants` so the model states entity_scope]", term.EntityScope)
 	}
 	return res, nil
 }

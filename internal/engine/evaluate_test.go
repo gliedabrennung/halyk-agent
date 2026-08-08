@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -344,42 +343,6 @@ func TestTransfersAreNotNarrowedWithoutADeclaredScope(t *testing.T) {
 	}
 	if !v.Actual.Equal(dec("500000")) {
 		t.Errorf("actual = %s, want 500000: every transfer counts when no scope is declared", v.Actual)
-	}
-}
-
-// Скоуп, восстановленный по формулировке, считается, но помечает ячейку и роняет уверенность.
-func TestAnInferredScopeIsMarkedAndLowersConfidence(t *testing.T) {
-	in := &Inputs{
-		Facts: &domain.FactBase{Parties: []domain.Party{
-			{Name: "Restricted Holdings LLP", Status: domain.StatusRestricted},
-			{Name: "Unrestricted Holdings LLP", Status: domain.StatusUnrestricted},
-		}},
-		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
-			label("TXN-P1-0017", domain.CatAssetTransfer),
-			label("TXN-P1-0025", domain.CatAssetTransfer),
-		}},
-		Txns: []domain.Txn{
-			ledgerRow("TXN-P1-0017", 300, "Restricted Holdings LLP", "-100000"),
-			ledgerRow("TXN-P1-0025", 250, "Unrestricted Holdings LLP", "-400000"),
-		},
-	}
-	s := spec("transferred", "<=", "1000000",
-		domain.Term{Name: "transferred", Kind: domain.TermLedgerCategory,
-			Line:        "капитальные активы, переданные дочерним организациям",
-			EntityScope: domain.StatusUnrestricted, ScopeInferred: true})
-
-	v, err := Evaluate(s, in)
-	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
-	}
-	if !v.Actual.Equal(dec("400000")) {
-		t.Errorf("actual = %s, want 400000", v.Actual)
-	}
-	if v.Confidence > 0.4 {
-		t.Errorf("confidence = %v, want it capped for an inferred scope", v.Confidence)
-	}
-	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "read off the clause wording") }) {
-		t.Errorf("the trace does not say the scope was inferred: %q", v.Trace)
 	}
 }
 

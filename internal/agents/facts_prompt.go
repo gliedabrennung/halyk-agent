@@ -82,6 +82,18 @@ Rules:
    not a reclassification: an audit report saying that no reclassifications were required says
    nothing about a missing figure, and leaving it out reports the row as zero.
 
+6b. FIGURES THAT HAVE NO ROW AT ALL. A note may state an amount the ledger deliberately does
+   not carry as a transaction — an obligation, a provision, an accrued or aggregate liability
+   disclosed so that a covenant can be measured over it. Wording of the shape "раскрывается и
+   не отражается отдельной операцией", "disclosed and not recorded as a separate entry", "для
+   целей агрегирования по ковенантам" marks exactly this. Emit it as "disclosed_amount" with
+   applied true and no txn_id, because no row exists to name.
+
+   Do not confuse it with 6a: there the row exists and only its amount is blank in the export.
+   Here there is no row and there never was one. A covenant that aggregates such a line is
+   reported short by the whole amount when the note is left out, and nothing downstream can
+   notice the omission.
+
 7. OCR PAGES. Some pages have no text layer and were transcribed by OCR; the ownership table is
    often one of them. The transcript can be noisy: read it for its structure, and prefer a figure
    the surrounding text confirms over a lone garbled one.
