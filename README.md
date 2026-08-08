@@ -18,8 +18,12 @@
 
 ```bash
 cp .env.example .env      # и вписать LLM_API_KEY, TEAM, CONTACT_EMAIL
+mkdir -p .cache artifacts out logs
 docker compose run --rm agent run
 ```
+
+`mkdir` не формальность: контейнер работает от uid хоста, а недостающий каталог под bind-mount
+docker создаёт сам и от root — в такой прогон стадия упирается на первой же записи.
 
 На выходе — `out/submission.json`, `out/report.pdf` и остальное в `out/`.
 
