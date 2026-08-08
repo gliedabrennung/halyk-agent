@@ -23,12 +23,7 @@ func TestDifferencesNamesWhatMoved(t *testing.T) {
 		{"all three", answer{status: "COMPLIANT", actual: dec("0.40"), evidence: "—"}, "status+actual+evidence"},
 	}
 	for _, tt := range tests {
-		diff := differences(base, tt.got)
-		set := map[string]bool{}
-		for _, d := range diff {
-			set[d] = true
-		}
-		if got := joinWhat(set); got != tt.want {
+		if got := joinWhat(differences(base, tt.got)); got != tt.want {
 			t.Errorf("%s: differences = %q, want %q", tt.name, got, tt.want)
 		}
 	}
