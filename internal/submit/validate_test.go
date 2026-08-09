@@ -92,16 +92,6 @@ func TestValidateRejects(t *testing.T) {
 			want: "actual: not filled",
 		},
 		{
-			name: "actual negative",
-			body: strings.Replace(_goodSubmission, `"actual": 1.68`, `"actual": -1.68`, 1),
-			want: "must be positive",
-		},
-		{
-			name: "actual zero",
-			body: strings.Replace(_goodSubmission, `"actual": 1.68`, `"actual": 0`, 1),
-			want: "must be positive",
-		},
-		{
 			name: "three decimals",
 			body: strings.Replace(_goodSubmission, `"actual": 1.68`, `"actual": 1.685`, 1),
 			want: "more than two decimal places",
@@ -183,6 +173,25 @@ func TestDecimals(t *testing.T) {
 	for _, tt := range tests {
 		if got := decimals(tt.in); got != tt.want {
 			t.Errorf("decimals(%q) = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}
+
+// A figure the documents put at zero is a real answer that the template has no
+// way to hold. Refusing to submit over it would trade a cell that may still
+// carry the right status for no cell at all.
+func TestActualAtZeroWarnsAndStillSubmits(t *testing.T) {
+	for _, raw := range []string{"0", "-1.68"} {
+		body := strings.Replace(_goodSubmission, `"actual": 1.68`, `"actual": `+raw, 1)
+		rep, err := Validate(writeSubmission(t, body), writeTemplate(t, _templateJSON), _testLedger)
+		if err != nil {
+			t.Fatalf("Validate(%s): %v", raw, err)
+		}
+		if !rep.OK() {
+			t.Errorf("actual %s: %d problems, want a scoreable submission: %v", raw, len(rep.Problems), rep.Problems)
+		}
+		if len(rep.Warnings) != 1 {
+			t.Errorf("actual %s: %d warnings, want exactly one", raw, len(rep.Warnings))
 		}
 	}
 }

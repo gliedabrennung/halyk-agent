@@ -194,13 +194,18 @@ func parseFacts(raw string, in FactsInput) (*domain.FactBase, error) {
 		return nil, fmt.Errorf("unrestricted_threshold %q: %w", fj.UnrestrictedThreshold, err)
 	}
 
+	// A share is the sharper instrument and the document printed it, so where
+	// one is given the threshold decides. A statement in words carries the
+	// question only where there is no arithmetic to settle it — which is also
+	// the one case a model cannot mistake a table row or the threshold rule
+	// itself for a statement about this counterparty.
 	for i := range fb.Parties {
 		p := &fb.Parties[i]
-		if p.Declared {
+		p.Declared = p.Declared && p.VotingShare.IsZero()
+		switch {
+		case p.Declared:
 			p.Related = true
-			continue
-		}
-		if fb.RelatedPartyThreshold.IsPositive() {
+		case fb.RelatedPartyThreshold.IsPositive():
 			p.Related = p.VotingShare.GreaterThanOrEqual(fb.RelatedPartyThreshold)
 		}
 	}

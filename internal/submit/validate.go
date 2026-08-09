@@ -25,6 +25,11 @@ type ValidationReport struct {
 	SubmissionPath string    `json:"submission_path"`
 	Cells          int       `json:"cells"`
 	Problems       []Problem `json:"problems,omitempty"`
+
+	// Warnings hold values the scorer accepts but that no reader should trust:
+	// a figure the documents genuinely put at zero cannot be expressed in a
+	// template that asks for a positive one.
+	Warnings []Problem `json:"warnings,omitempty"`
 }
 
 func (r *ValidationReport) OK() bool { return len(r.Problems) == 0 }
@@ -34,6 +39,7 @@ func (r *ValidationReport) String() string {
 	if r.OK() {
 		fmt.Fprintf(&b, "VALID  %s\n", r.SubmissionPath)
 		fmt.Fprintf(&b, "  %d cells, structure identical to the template, all values in range\n", r.Cells)
+		r.writeWarnings(&b)
 		return b.String()
 	}
 	fmt.Fprintf(&b, "INVALID  %s\n", r.SubmissionPath)
@@ -41,7 +47,18 @@ func (r *ValidationReport) String() string {
 	for _, p := range r.Problems {
 		fmt.Fprintf(&b, "    %s\n", p)
 	}
+	r.writeWarnings(&b)
 	return b.String()
+}
+
+func (r *ValidationReport) writeWarnings(b *strings.Builder) {
+	if len(r.Warnings) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "  %d cells carry a figure the template cannot express:\n", len(r.Warnings))
+	for _, w := range r.Warnings {
+		fmt.Fprintf(b, "    %s\n", w)
+	}
 }
 
 type LedgerIndex map[string]string
@@ -157,8 +174,8 @@ func validateCell(rep *ValidationReport, where, scenarioID string, cell gjson.Re
 		rep.Problems = append(rep.Problems, Problem{where + ".actual",
 			fmt.Sprintf("must be a JSON number, got %s", actual.Type)})
 	case actual.Float() <= 0:
-		rep.Problems = append(rep.Problems, Problem{where + ".actual",
-			fmt.Sprintf("must be positive, got %s", actual.Raw)})
+		rep.Warnings = append(rep.Warnings, Problem{where + ".actual",
+			fmt.Sprintf("the template asks for a positive figure and the documents give %s", actual.Raw)})
 	case math.IsNaN(actual.Float()) || math.IsInf(actual.Float(), 0):
 		rep.Problems = append(rep.Problems, Problem{where + ".actual", "must be finite"})
 	default:

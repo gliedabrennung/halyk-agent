@@ -267,3 +267,28 @@ func TestStatedAffiliationDoesNotPromoteTheRest(t *testing.T) {
 		}
 	}
 }
+
+// Where the dossier prints a share, that share decides. A model that reads a
+// table row or the threshold rule itself as a statement about one counterparty
+// must not thereby promote a party the arithmetic excludes.
+func TestStatedAffiliationYieldsToAShare(t *testing.T) {
+	body := strings.Replace(_factsJSONBody,
+		`{"name": "Almaty Chill Logistics LLP",   "voting_share": "8.6"}`,
+		`{"name": "Almaty Chill Logistics LLP",   "voting_share": "8.6", "related": true}`, 1)
+
+	fb, err := parseFacts(body, _factsInput)
+	if err != nil {
+		t.Fatalf("parseFacts: %v", err)
+	}
+	for _, p := range fb.Parties {
+		if p.Name != "Almaty Chill Logistics LLP" {
+			continue
+		}
+		if p.Related || p.Declared {
+			t.Errorf("8.6%% against a 25%% threshold: related = %v, declared = %v, want both false",
+				p.Related, p.Declared)
+		}
+		return
+	}
+	t.Fatal("Almaty Chill Logistics LLP is missing from the parsed parties")
+}
