@@ -823,3 +823,78 @@ func TestANoteTermTheNotesDoNotAnswerIsUnmeasurable(t *testing.T) {
 		t.Errorf("the trace must say the notes held nothing: %q", v.Trace)
 	}
 }
+
+func TestADeclaredCategoryDecidesOverTheWording(t *testing.T) {
+	in := &Inputs{
+		Facts: &domain.FactBase{},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
+			label("TXN-P1-0001", domain.CatTelecom),
+			label("TXN-P1-0002", domain.CatRent),
+		}},
+		Txns: []domain.Txn{
+			ledgerRow("TXN-P1-0001", 10, "Carrier", "-300000"),
+			ledgerRow("TXN-P1-0002", 20, "Landlord", "-700000"),
+		},
+	}
+	s := spec("connectivity", "<=", "1000000",
+		domain.Term{Name: "connectivity", Kind: domain.TermStatementLine,
+			Line: "аренда каналов связи", Category: domain.CatTelecom})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("300000")) {
+		t.Errorf("actual = %s, want 300000: the declared category decides", v.Actual)
+	}
+	if v.Confidence > 0.4 {
+		t.Errorf("confidence = %v: the wording and the specification disagree, that must show", v.Confidence)
+	}
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "while the wording") }) {
+		t.Errorf("the disagreement must be named in the trace: %q", v.Trace)
+	}
+}
+
+func TestAWordingNoAliasCoversStillComputes(t *testing.T) {
+	in := &Inputs{
+		Facts:  &domain.FactBase{},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{label("TXN-P1-0001", domain.CatOtherOperating)}},
+		Txns:   []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Shareholder", "-450000")},
+	}
+	s := spec("payouts", "<=", "500000",
+		domain.Term{Name: "payouts", Kind: domain.TermStatementLine,
+			Line: "выплаты участникам по решению собрания", Category: domain.CatOtherOperating})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("450000")) {
+		t.Errorf("actual = %s, want 450000: no alias covers this wording, the declaration does", v.Actual)
+	}
+	if v.Confidence <= 0.4 {
+		t.Errorf("confidence = %v: nothing contradicts the declaration", v.Confidence)
+	}
+}
+
+func TestACategoryNoRowCarriesIsUnmeasurable(t *testing.T) {
+	in := &Inputs{
+		Facts:  &domain.FactBase{},
+		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{label("TXN-P1-0001", domain.CatOperatingCosts)}},
+		Txns:   []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Contractor", "-450000")},
+	}
+	s := spec("marketing", "<=", "500000",
+		domain.Term{Name: "marketing", Kind: domain.TermStatementLine,
+			Line: "Маркетинговые расходы", Category: domain.CatMarketing})
+
+	v, err := Evaluate(s, in)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if v.Confidence > 0.2 {
+		t.Errorf("confidence = %v: no row carries the category the term sums", v.Confidence)
+	}
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "different bucket") }) {
+		t.Errorf("the empty category must be named: %q", v.Trace)
+	}
+}

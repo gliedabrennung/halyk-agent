@@ -80,6 +80,8 @@ type termResult struct {
 	Trace        string
 
 	Unmeasurable bool
+
+	Contested bool
 }
 
 func computeTerms(
@@ -131,10 +133,7 @@ func computeTerm(
 		return noteTerm(term, in, rows)
 	}
 
-	cat, ok := domain.CategoryForLine(term.Line)
-	if !ok {
-		cat, ok = domain.CategoryForLine(term.Description)
-	}
+	cat, ok, contested := termCategory(term)
 	if !ok {
 		return noteTerm(term, in, rows)
 	}
@@ -145,7 +144,27 @@ func computeTerm(
 
 	out := categoryTerm(term, rows, cat, cat == domain.CatCapex)
 	applyReclassification(&out, term, in, cat)
+	if contested != "" {
+		out.Contested = true
+		out.Trace += contested
+	}
 	return out, nil
+}
+
+func termCategory(term domain.Term) (domain.Category, bool, string) {
+	read, fromWording := domain.CategoryForLine(term.Line)
+	if !fromWording {
+		read, fromWording = domain.CategoryForLine(term.Description)
+	}
+	if term.Category == "" {
+		return read, fromWording, ""
+	}
+	if fromWording && read != term.Category {
+		return term.Category, true, fmt.Sprintf(
+			"; the specification calls this %s while the wording of the line reads as %s",
+			term.Category, read)
+	}
+	return term.Category, true, ""
 }
 
 func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Category) (termResult, error) {
@@ -372,6 +391,10 @@ func categoryTerm(
 		res.Unmeasurable = true
 		res.Trace += fmt.Sprintf("; %s carries no amount in the export and none was disclosed, so it counts as zero",
 			strings.Join(unpriced, ", "))
+	}
+	if len(res.Contributors) == 0 && len(unpriced) == 0 && len(rows) > 0 {
+		res.Unmeasurable = true
+		res.Trace += "; no row of this borrower carries that category, so the term may be reading a different bucket than the ledger"
 	}
 	return res
 }

@@ -16,6 +16,8 @@ func Evaluate(spec *domain.CovenantSpec, in *Inputs) (domain.Verdict, error) {
 		return domain.Verdict{}, err
 	}
 
+	const contestedConfidence = 0.4
+
 	v := domain.Verdict{
 		ScenarioID: spec.ScenarioID,
 		ClauseID:   spec.ClauseID,
@@ -28,6 +30,10 @@ func Evaluate(spec *domain.CovenantSpec, in *Inputs) (domain.Verdict, error) {
 		if t.Unmeasurable {
 
 			v.Confidence = 0.2
+		}
+		if t.Contested {
+
+			v.Confidence = min(v.Confidence, contestedConfidence)
 		}
 	}
 	v.Contributors = sortedIDs(v.Contributors)

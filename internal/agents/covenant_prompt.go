@@ -5,7 +5,8 @@ import (
 	"strings"
 )
 
-const _covenantInstruction = `You convert one clause of a credit agreement into an executable specification.
+func covenantInstruction() string {
+	return `You convert one clause of a credit agreement into an executable specification.
 
 You do NOT decide compliance and you do NOT compute anything. You describe what must be
 computed, precisely enough that a program can do it without reading the contract.
@@ -25,6 +26,7 @@ Return STRICT JSON with exactly these keys:
       "reclassification": "include_in | exclude_from | both | ignore",
       "entity_source": "kyc | corporate_structure | compliance_file | ias24 | \"\"",
       "entity_scope": "restricted | unrestricted | \"\"",
+      "category": "one of the taxonomy below, or \"\" — see rule 3b",
       "direction": "outflow | inflow | any",
       "constant": "only for kind=constant, a decimal string"
     }
@@ -82,6 +84,14 @@ Rules that decide whether the specification is usable:
    statements — revenue, operating costs, capital expenditure are figures, not counterparties.
    Leave it empty unless the clause itself limits the term to subsidiaries of one status.
 
+3b. CATEGORY. Name the category of the borrower's own records this term sums, from the taxonomy
+   at the end of these rules. It is what makes the term computable: the engine adds up the ledger
+   rows carrying that category, so a term whose category names a different bucket than the rows
+   sums the wrong rows. Read the clause's own wording for the quantity and pick the closest leaf;
+   when none of them covers it, take the residual one for its side rather than inventing a name.
+   Leave it empty for kind=constant, kind=group_consolidated, kind=related_party_payments and
+   kind=statement_note — those are not sums over a category.
+
 4. RECLASSIFICATION. State what the clause says about amounts the auditor reallocated:
    "include_in" when amounts moved INTO the line count; "exclude_from" when amounts moved
    OUT are dropped; "both" when the auditor's allocation governs in both directions;
@@ -128,7 +138,11 @@ Rules that decide whether the specification is usable:
    These are formatting examples with invented numbers. Never carry one into your answer:
    the threshold is whatever THIS clause states.
 
+Categories:
+
+` + taxonomyBlock() + `
 Output JSON only. No prose, no markdown fence.`
+}
 
 func (in CovenantInput) prompt() string {
 	var b strings.Builder

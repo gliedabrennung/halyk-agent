@@ -88,6 +88,10 @@ type Term struct {
 	// StatusUnrestricted или пусто — все контрагенты.
 	EntityScope string `json:"entity_scope,omitempty"`
 
+	// Category — категория записей заёмщика, которую суммирует терм. Объявляется
+	// спецификацией; CategoryForLine остаётся вторым мнением, а не источником.
+	Category Category `json:"category,omitempty"`
+
 	Direction string          `json:"direction,omitempty"`
 	Constant  decimal.Decimal `json:"constant,omitempty"`
 }

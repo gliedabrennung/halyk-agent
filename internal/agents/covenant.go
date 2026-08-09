@@ -34,6 +34,7 @@ type termJSON struct {
 	Reclassification string `json:"reclassification"`
 	EntitySource     string `json:"entity_source"`
 	EntityScope      string `json:"entity_scope"`
+	Category         string `json:"category"`
 	Direction        string `json:"direction"`
 	Constant         string `json:"constant"`
 }
@@ -85,7 +86,7 @@ func ExtractCovenant(
 		Name:          "covenant_extract",
 		Model:         model,
 		Description:   "Turns one covenant clause into an executable specification.",
-		Instruction:   _covenantInstruction,
+		Instruction:   covenantInstruction(),
 		Prompt:        in.prompt(),
 		SchemaVersion: CovenantSchemaVersion,
 		JSON:          true,
@@ -203,6 +204,9 @@ func buildSpec(cj *covenantJSON, in CovenantInput) (*domain.CovenantSpec, error)
 		if term.EntityScope, err = normaliseEntityScope(t.EntityScope); err != nil {
 			return nil, fmt.Errorf("term %q: %w", term.Name, err)
 		}
+		if term.Category, err = normaliseTermCategory(t.Category); err != nil {
+			return nil, fmt.Errorf("term %q: %w", term.Name, err)
+		}
 		if t.Constant != "" {
 			c, err := parseDecimal(t.Constant)
 			if err != nil {
@@ -315,6 +319,17 @@ func normaliseEntityScope(v string) (string, error) {
 	}
 	return "", fmt.Errorf("entity_scope %q is not one of %s, %s or empty",
 		v, domain.StatusRestricted, domain.StatusUnrestricted)
+}
+
+func normaliseTermCategory(v string) (domain.Category, error) {
+	c := domain.Category(strings.ToLower(strings.TrimSpace(v)))
+	switch {
+	case c == "" || c == domain.CatUnknown:
+		return "", nil
+	case domain.ValidCategory(c):
+		return c, nil
+	}
+	return "", fmt.Errorf("category %q is not one of the taxonomy", v)
 }
 
 func validTermKind(k domain.TermKind) bool {

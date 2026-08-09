@@ -79,7 +79,7 @@ func specWire(spec *domain.CovenantSpec) covenantJSON {
 		wire := termJSON{
 			Name: t.Name, Kind: string(t.Kind), Line: t.Line, Description: t.Description,
 			Reclassification: t.Reclassification, EntitySource: t.EntitySource,
-			EntityScope: t.EntityScope, Direction: t.Direction,
+			EntityScope: t.EntityScope, Category: string(t.Category), Direction: t.Direction,
 		}
 		if !t.Constant.IsZero() {
 			wire.Constant = t.Constant.String()
