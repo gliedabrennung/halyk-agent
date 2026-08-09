@@ -156,3 +156,39 @@ func TestDefinitionsText(t *testing.T) {
 		t.Error("the definitions section leaked into the covenants")
 	}
 }
+
+func TestArticleHeadingWithoutASeparator(t *testing.T) {
+	const text = "Статья 5          Случаи неисполнения\n\nСтатья 6          Финансовые ковенанты\n\nПункт 6.1 Первый.\nПункт 6.2 Второй.\n"
+	sec, err := Article(text, 6)
+	if err != nil {
+		t.Fatalf("Article: %v", err)
+	}
+	if !hasAllClauses(sec.Text, []string{"6.1", "6.2"}) {
+		t.Errorf("article 6 did not carry its clauses: %q", sec.Text)
+	}
+}
+
+func TestArticleNumberedWithRomanNumerals(t *testing.T) {
+	const text = "Article IV — Undertakings\n\nArticle V — Financial Covenants\n\nSection 5.1 First.\nSection 5.2 Second.\n"
+	sec, err := CovenantArticleFor(text, []string{"5.1", "5.2"})
+	if err != nil {
+		t.Fatalf("CovenantArticleFor: %v", err)
+	}
+	if sec.Number != 5 {
+		t.Errorf("article number = %d, want 5 for V", sec.Number)
+	}
+}
+
+func TestArticleNumber(t *testing.T) {
+	ok := map[string]int{"6": 6, "25": 25, "I": 1, "IV": 4, "V": 5, "IX": 9, "X": 10, "XIV": 14, "xxi": 21}
+	for in, want := range ok {
+		if got, valid := articleNumber(in); !valid || got != want {
+			t.Errorf("articleNumber(%q) = %d, %v; want %d", in, got, valid, want)
+		}
+	}
+	for _, in := range []string{"", "ABC", "6a"} {
+		if got, valid := articleNumber(in); valid {
+			t.Errorf("articleNumber(%q) = %d, want a rejection", in, got)
+		}
+	}
+}

@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	articleRe = regexp.MustCompile(`(?im)^[^\S\n]*(?:Статья|Article)\s*(\d{1,2})\s*[—–\-.:]`)
+	articleRe = regexp.MustCompile(`(?im)^[^\S\n]*(?:Статья|Article)\s+(\d{1,2}|[IVXLCivxlc]{1,7})\b`)
 
 	clauseStartRe = regexp.MustCompile(`(?im)(?:^|\s)(?:Пункт|Clause|Section)\s*(\d{1,2}\.\d{1,2})\b`)
 )
@@ -65,9 +65,8 @@ func Article(text string, n int) (Section, error) {
 func articleOccurrences(text string) []articleOccurrence {
 	var out []articleOccurrence
 	for _, loc := range articleRe.FindAllStringSubmatchIndex(text, -1) {
-		numStr := text[loc[2]:loc[3]]
-		n, err := strconv.Atoi(numStr)
-		if err != nil {
+		n, ok := articleNumber(text[loc[2]:loc[3]])
+		if !ok {
 			continue
 		}
 		lineEnd := strings.IndexByte(text[loc[0]:], '\n')
@@ -79,6 +78,31 @@ func articleOccurrences(text string) []articleOccurrence {
 	}
 	slices.SortStableFunc(out, func(a, b articleOccurrence) int { return cmp.Compare(a.start, b.start) })
 	return out
+}
+
+var _romanValues = map[byte]int{'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100}
+
+func articleNumber(s string) (int, bool) {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n, true
+	}
+	upper := strings.ToUpper(s)
+	total, prev := 0, 0
+	for i := len(upper) - 1; i >= 0; i-- {
+		v, ok := _romanValues[upper[i]]
+		if !ok {
+			return 0, false
+		}
+		if v < prev {
+			total -= v
+			continue
+		}
+		total, prev = total+v, v
+	}
+	if total <= 0 {
+		return 0, false
+	}
+	return total, true
 }
 
 func Clause(sectionText, clauseID string) (string, error) {
