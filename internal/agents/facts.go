@@ -51,6 +51,7 @@ type factsJSON struct {
 		VotingShare  string `json:"voting_share"`
 		PledgedShare string `json:"pledged_share"`
 		Relation     string `json:"relation"`
+		Related      any    `json:"related"`
 		Status       string `json:"status"`
 		SourceDoc    string `json:"source_doc"`
 		Quote        string `json:"quote"`
@@ -172,6 +173,7 @@ func parseFacts(raw string, in FactsInput) (*domain.FactBase, error) {
 			Name:      name,
 			Relation:  strings.TrimSpace(p.Relation),
 			Status:    strings.TrimSpace(p.Status),
+			Declared:  isTrue(p.Related),
 			SourceRef: domain.PageRef{DocID: strings.TrimSpace(p.SourceDoc), Quote: strings.TrimSpace(p.Quote)},
 		}
 		var err error
@@ -192,9 +194,14 @@ func parseFacts(raw string, in FactsInput) (*domain.FactBase, error) {
 		return nil, fmt.Errorf("unrestricted_threshold %q: %w", fj.UnrestrictedThreshold, err)
 	}
 
-	if fb.RelatedPartyThreshold.IsPositive() {
-		for i := range fb.Parties {
-			fb.Parties[i].Related = fb.Parties[i].VotingShare.GreaterThanOrEqual(fb.RelatedPartyThreshold)
+	for i := range fb.Parties {
+		p := &fb.Parties[i]
+		if p.Declared {
+			p.Related = true
+			continue
+		}
+		if fb.RelatedPartyThreshold.IsPositive() {
+			p.Related = p.VotingShare.GreaterThanOrEqual(fb.RelatedPartyThreshold)
 		}
 	}
 

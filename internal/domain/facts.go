@@ -35,6 +35,10 @@ type Party struct {
 	Related  bool   `json:"related"`
 	Relation string `json:"relation,omitempty"`
 
+	// Declared records that the document called this counterparty related in
+	// words, rather than leaving it to be inferred from a voting share.
+	Declared bool `json:"declared,omitempty"`
+
 	PledgedShare decimal.Decimal `json:"pledged_share,omitempty"`
 
 	Status    string  `json:"status,omitempty"`

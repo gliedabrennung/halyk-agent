@@ -214,3 +214,56 @@ func TestUnparseableFXRateStillFails(t *testing.T) {
 		t.Error("a garbled rate must be reported, not silently dropped")
 	}
 }
+
+// A dossier may hold no ownership table at all and simply name a counterparty
+// an affiliate. That statement binds on its own, and no share is missing from
+// it — there was never a percentage to read.
+func TestStatedAffiliationNeedsNoVotingShare(t *testing.T) {
+	body := strings.Replace(_factsJSONBody,
+		`{"name": "Almaty Chill Logistics LLP",   "voting_share": "8.6"}`,
+		`{"name": "Almaty Chill Logistics LLP",   "voting_share": "8.6"},
+     {"name": "Altyn Capital LLP", "related": true, "relation": "affiliate"}`, 1)
+
+	fb, err := parseFacts(body, _factsInput)
+	if err != nil {
+		t.Fatalf("parseFacts: %v", err)
+	}
+	for _, p := range fb.Parties {
+		if p.Name != "Altyn Capital LLP" {
+			continue
+		}
+		if !p.Related || !p.Declared {
+			t.Errorf("Altyn Capital: related = %v, declared = %v, want both true", p.Related, p.Declared)
+		}
+		if !p.VotingShare.IsZero() {
+			t.Errorf("Altyn Capital: voting share = %s, want none", p.VotingShare)
+		}
+		return
+	}
+	t.Fatal("Altyn Capital LLP is missing from the parsed parties")
+}
+
+// The threshold still decides everyone the dossier left to arithmetic, and a
+// share below it stays unrelated however the dossier words its other entries.
+func TestStatedAffiliationDoesNotPromoteTheRest(t *testing.T) {
+	body := strings.Replace(_factsJSONBody,
+		`{"name": "Almaty Chill Logistics LLP",   "voting_share": "8.6"}`,
+		`{"name": "Almaty Chill Logistics LLP",   "voting_share": "8.6"},
+     {"name": "Altyn Capital LLP", "related": true}`, 1)
+
+	fb, err := parseFacts(body, _factsInput)
+	if err != nil {
+		t.Fatalf("parseFacts: %v", err)
+	}
+	want := map[string]bool{
+		"Almaty Chill Logistics LLP":   false,
+		"Tien Shan Advisory Bureau":    false,
+		"Zhetysu Capital Partners LLP": true,
+		"Altyn Capital LLP":            true,
+	}
+	for _, p := range fb.Parties {
+		if p.Related != want[p.Name] {
+			t.Errorf("%s: related = %v, want %v", p.Name, p.Related, want[p.Name])
+		}
+	}
+}

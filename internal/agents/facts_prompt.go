@@ -29,7 +29,8 @@ Return STRICT JSON:
   ],
   "parties": [
     {"name": "...", "voting_share": "44.7", "pledged_share": "63.9 if a collateral table gives this entity's pledged asset share, else empty",
-     "relation": "affiliate|subsidiary|parent|", "status": "restricted|unrestricted| — only if stated in words", "source_doc": "...", "quote": "..."}
+     "relation": "affiliate|subsidiary|parent|", "related": "true only where the document itself calls this counterparty related or affiliated, in words",
+     "status": "restricted|unrestricted| — only if stated in words", "source_doc": "...", "quote": "..."}
   ],
   "related_party_threshold": "the voting share percentage at or above which a counterparty counts as related, formatted like 47.5; empty if the file states none",
   "unrestricted_threshold": "the pledged-asset percentage BELOW which a subsidiary is outside the security and counts as unrestricted, formatted like 62.5; empty if the file states none",
@@ -60,9 +61,19 @@ Rules:
    a round default. Copy the number printed in THIS borrower's file; if the file states none,
    leave the field empty rather than supplying a customary figure.
 
-5. PARTIES. Transcribe every organisation in the ownership table with its voting share, whether
-   or not it meets the threshold — a share below the threshold is evidence too. Do not decide
-   relatedness yourself; just report the shares.
+5. PARTIES. Transcribe every organisation the dossier identifies, with its voting share where
+   one is given, whether or not it meets the threshold — a share below the threshold is evidence
+   too. Do not work relatedness out yourself from a share; report the share and leave the
+   threshold to us.
+
+5b. RELATEDNESS STATED IN WORDS. A dossier need not hold an ownership table at all. It may
+   simply say that a named counterparty IS an affiliate, a related party, under common control,
+   or related under IAS 24 — wording of the shape "классифицирован как АФФИЛИРОВАННОЕ ЛИЦО",
+   "признаётся связанной стороной", "is a related party of the Borrower". That statement is the
+   document deciding the question outright, and it binds whether or not any percentage appears.
+   Emit such a counterparty with "related": true and "voting_share" empty. Set "related" only on
+   the strength of such a statement about THAT counterparty; a share alone is not one, and
+   neither is a name that merely resembles a party already named.
 
 5a. COLLATERAL COVERAGE. A dossier may carry a SECOND table — a heading about the security or
    collateral coverage of subsidiaries — giving the share of each subsidiary's assets pledged

@@ -119,6 +119,9 @@ func criticInput(c cell, text string) agents.VerdictCriticInput {
 			}
 			if p.Related {
 				line += " — RELATED"
+				if p.Declared {
+					line += ", the dossier says so in words"
+				}
 			} else if p.VotingShare.IsPositive() {
 				line += " — not related"
 			}

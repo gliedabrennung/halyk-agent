@@ -51,6 +51,20 @@ func parsePercent(raw string) (decimal.Decimal, error) {
 	return parseDecimal(s)
 }
 
+// isTrue reads a flag a model may render as a JSON boolean or as a word.
+func isTrue(raw any) bool {
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "yes", "y", "1":
+			return true
+		}
+	}
+	return false
+}
+
 func parseDecimal(s string) (decimal.Decimal, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

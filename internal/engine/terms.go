@@ -100,7 +100,44 @@ func computeTerms(
 		vars[strings.ToLower(res.Name)] = res.Value
 		results = append(results, res)
 	}
+	markIndistinguishable(spec, results)
 	return vars, results, nil
+}
+
+// markIndistinguishable flags terms that the specification names apart but that
+// the ledger derives identically. Two names over one derivation carry no more
+// information than one, and an expression that subtracts them reports a
+// difference the documents never stated.
+func markIndistinguishable(spec *domain.CovenantSpec, results []termResult) {
+	kinds := make(map[string]domain.TermKind, len(spec.Terms))
+	for _, t := range spec.Terms {
+		kinds[t.Name] = t.Kind
+	}
+
+	shared := make(map[string][]int, len(results))
+	for i, res := range results {
+		if kinds[res.Name] == domain.TermConstant || res.Unmeasurable {
+			continue
+		}
+		body := strings.TrimSpace(strings.TrimPrefix(res.Trace, res.Name))
+		shared[body] = append(shared[body], i)
+	}
+
+	for _, idx := range shared {
+		if len(idx) < 2 {
+			continue
+		}
+		names := make([]string, 0, len(idx))
+		for _, i := range idx {
+			names = append(names, results[i].Name)
+		}
+		for _, i := range idx {
+			results[i].Unmeasurable = true
+			results[i].Trace += fmt.Sprintf(
+				"; %s come to the same figure by the same reading, so the clause's own wording is what tells them apart and the documents do not",
+				strings.Join(names, " and "))
+		}
+	}
 }
 
 func computeTerm(

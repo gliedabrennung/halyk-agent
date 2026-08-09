@@ -36,9 +36,12 @@ Before you object, rule out these things, which are correct by design and are NO
 - A disclosure applies to the line it names and to no other. An amount reclassified into
   operating costs does not belong in capital expenditure, and a tax figure recovered from a memo
   does not belong in revenue.
-- Related-party status is decided by the borrower's own voting-share threshold, which is given
-  below. A counterparty below that threshold is NOT a related party, however close its name looks
-  to one. Check the number before you object.
+- Related-party status is decided by the borrower's own dossier, and it decides in one of two
+  ways: a voting share at or above the borrower's own threshold, or a statement in words naming
+  that counterparty an affiliate or a related party. Both are listed below, and a party marked
+  RELATED is related however it got there — a stated affiliate carries no percentage, and its
+  missing share is not an objection. A counterparty that is NOT marked is not a related party,
+  however close its name looks to one that is. Read the list before you object.
 - A subsidiary is unrestricted only where the collateral table puts its pledged share below the
   stated percentage. A transfer to a restricted subsidiary is outside a clause that limits
   transfers to unrestricted ones.
