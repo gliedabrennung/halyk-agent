@@ -21,7 +21,7 @@ USD 5,000,000 за Ковенантный период.
 `
 
 func TestScanFindsClauseNumbersAfterKeyword(t *testing.T) {
-	s := ScanText(_agreementExcerpt)
+	s := ScanText(_agreementExcerpt, nil)
 	for _, want := range []string{"6.1", "6.2", "6.3"} {
 		if !contains(s.ClauseNumbers, want) {
 			t.Errorf("clause %s not found; got %v", want, s.ClauseNumbers)
@@ -36,14 +36,14 @@ func TestScanFindsClauseNumbersAfterKeyword(t *testing.T) {
 }
 
 func TestScanIgnoresDecimalsThatLookLikeClauses(t *testing.T) {
-	s := ScanText("превышал 0.42x.\n1.55 kg of material\n")
+	s := ScanText("превышал 0.42x.\n1.55 kg of material\n", nil)
 	if contains(s.ClauseNumbers, "0.42") {
 		t.Errorf("0.42 was read as a clause number: %v", s.ClauseNumbers)
 	}
 }
 
 func TestScanHeadingStyleClauses(t *testing.T) {
-	s := ScanText("6.1  Maximum Leverage\n6.2) Restricted Payments\n")
+	s := ScanText("6.1  Maximum Leverage\n6.2) Restricted Payments\n", nil)
 	for _, want := range []string{"6.1", "6.2"} {
 		if !contains(s.ClauseNumbers, want) {
 			t.Errorf("heading clause %s not found; got %v", want, s.ClauseNumbers)
@@ -52,7 +52,7 @@ func TestScanHeadingStyleClauses(t *testing.T) {
 }
 
 func TestScanAccountsCurrenciesPeriod(t *testing.T) {
-	s := ScanText(_agreementExcerpt + "\nбанковский счёт ACC-7801 у Кредитора, счёт ACC-7801 повторно\n")
+	s := ScanText(_agreementExcerpt+"\nбанковский счёт ACC-7801 у Кредитора, счёт ACC-7801 повторно\n", []string{"ACC-7801"})
 	if len(s.AccountIDs) != 1 || s.AccountIDs[0] != "ACC-7801" {
 		t.Errorf("account ids = %v, want [ACC-7801] deduplicated", s.AccountIDs)
 	}
@@ -72,7 +72,7 @@ func TestScanAccountsCurrenciesPeriod(t *testing.T) {
 
 func TestScanDetectsSupersededBanner(t *testing.T) {
 	text := "НЕДЕЙСТВУЮЩАЯ РЕДАКЦИЯ (2024 г.). Заменена и изложена в новой редакции\n" + _agreementExcerpt
-	s := ScanText(text)
+	s := ScanText(text, nil)
 	if !s.Superseded {
 		t.Fatal("the superseded banner was not detected")
 	}
@@ -82,7 +82,7 @@ func TestScanDetectsSupersededBanner(t *testing.T) {
 }
 
 func TestScanCleanDocumentIsNotSuperseded(t *testing.T) {
-	if ScanText(_agreementExcerpt).Superseded {
+	if ScanText(_agreementExcerpt, nil).Superseded {
 		t.Error("a current agreement must not be flagged as superseded")
 	}
 }
@@ -116,14 +116,14 @@ func contains(list []string, v string) bool {
 func TestScanIgnoresVersioningProseOutsideTheBanner(t *testing.T) {
 	body := strings.Repeat("Обычный текст документа. ", 120) +
 		"\nПредыдущая редакция сохраняется в архиве и помечается как недействующая.\n"
-	if s := ScanText(body); s.Superseded {
+	if s := ScanText(body, nil); s.Superseded {
 		t.Errorf("a policy describing archiving was read as retired: %q", s.SupersededQuote)
 	}
 }
 
 func TestScanReadsBannerAtTheTop(t *testing.T) {
 	text := "   НЕДЕЙСТВУЮЩАЯ РЕДАКЦИЯ (2024 г.). Заменена.\n\n" + _agreementExcerpt
-	if !ScanText(text).Superseded {
+	if !ScanText(text, nil).Superseded {
 		t.Error("a banner above the title must be detected")
 	}
 }
@@ -131,7 +131,7 @@ func TestScanReadsBannerAtTheTop(t *testing.T) {
 func TestScanPrefersTheNamedCovenantPeriod(t *testing.T) {
 	text := `Аудит проводился с 2026-01-15 по 2026-03-20.
 Заёмщик обязан соблюдать ковенанты в течение Ковенантного периода с 2025-01-01 по 2025-12-31.`
-	s := ScanText(text)
+	s := ScanText(text, nil)
 	if s.PeriodFrom != "2025-01-01" || s.PeriodTo != "2025-12-31" {
 		t.Errorf("period = %s..%s, want the covenant period 2025-01-01..2025-12-31", s.PeriodFrom, s.PeriodTo)
 	}
@@ -141,11 +141,28 @@ func TestScanPrefersTheNamedCovenantPeriod(t *testing.T) {
 }
 
 func TestScanFallsBackToAnyPeriod(t *testing.T) {
-	s := ScanText("Отчётный период с 2025-01-01 по 2025-12-31.")
+	s := ScanText("Отчётный период с 2025-01-01 по 2025-12-31.", nil)
 	if s.PeriodFrom != "2025-01-01" {
 		t.Errorf("period_from = %q, want the generic range as a fallback", s.PeriodFrom)
 	}
 	if s.PeriodIsCovenant {
 		t.Error("a generic range must not claim to be the covenant period")
+	}
+}
+
+func TestScanFindsWhateverAccountIDsTheLedgerHolds(t *testing.T) {
+	const text = "Договор со счётом ACC-7801, а также TELE-4471 и ACC-9999 упомянуты ниже."
+	s := ScanText(text, []string{"ACC-7801", "TELE-4471", "ACC-1234"})
+
+	for _, want := range []string{"ACC-7801", "TELE-4471"} {
+		if !contains(s.AccountIDs, want) {
+			t.Errorf("%s not found; got %v", want, s.AccountIDs)
+		}
+	}
+	if contains(s.AccountIDs, "ACC-9999") {
+		t.Errorf("ACC-9999 is in the text but not in the ledger, it must not be reported: %v", s.AccountIDs)
+	}
+	if contains(s.AccountIDs, "ACC-1234") {
+		t.Errorf("ACC-1234 is in the ledger but not in the text: %v", s.AccountIDs)
 	}
 }

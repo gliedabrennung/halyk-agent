@@ -9,8 +9,6 @@ import (
 )
 
 var (
-	accountRe = regexp.MustCompile(`\bACC-\d{3,6}\b`)
-
 	clauseKeywordRe = regexp.MustCompile(`(?i)(?:пункт|статья|clause|section|article|п\.)\s*(\d{1,2}\.\d{1,2})\b`)
 
 	clauseHeadingRe = regexp.MustCompile(`(?m)^[^\S\n]*(\d{1,2}\.\d{1,2})[.)]?[^\S\n]+\p{Lu}`)
@@ -48,11 +46,17 @@ type Scan struct {
 	Chars            int      `json:"chars"`
 }
 
-func ScanText(text string) Scan {
+func ScanText(text string, accounts []string) Scan {
 	const bannerZone = 1500
 	s := Scan{Chars: len(text)}
 
-	s.AccountIDs = uniqueSorted(accountRe.FindAllString(text, -1))
+	var found []string
+	for _, id := range accounts {
+		if strings.Contains(text, id) {
+			found = append(found, id)
+		}
+	}
+	s.AccountIDs = uniqueSorted(found)
 	s.Currencies = uniqueSorted(currencyRe.FindAllString(text, -1))
 
 	for _, re := range []*regexp.Regexp{clauseKeywordRe, clauseHeadingRe} {

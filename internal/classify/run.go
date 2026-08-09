@@ -173,7 +173,9 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	for _, scn := range scenarios {
 		set, warnings, err := buildLabelSet(opts, scn, scoped, byPattern)
 		if err != nil {
-			return nil, err
+			opts.Log.Error("borrower left without labels; the others continue", "scenario", scn, "err", err)
+			rep.Failed = append(rep.Failed, fmt.Sprintf("%s: %v", scn, err))
+			continue
 		}
 		rep.Warnings = append(rep.Warnings, warnings...)
 		if err := opts.Store.PutArtifact(ArtifactKind+opts.Namespace, scn, set); err != nil {

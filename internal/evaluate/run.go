@@ -92,7 +92,9 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		specs, err := store.RequireArtifact[[]*domain.CovenantSpec](
 			opts.Store, covenants.ArtifactKind+opts.Namespace, scn, "covenant specifications", "covenants")
 		if err != nil {
-			return nil, err
+			rep.Missing = append(rep.Missing, missingForBorrower(tpl, scn, err)...)
+			opts.Log.Error("borrower left on the baseline; the others continue", "scenario", scn, "err", err)
+			continue
 		}
 		for _, spec := range specs {
 			for _, note := range covenants.Normalise(spec) {
@@ -103,12 +105,16 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		fb, err := store.RequireArtifact[domain.FactBase](
 			opts.Store, facts.ArtifactKind+opts.Namespace, scn, "fact base", "facts")
 		if err != nil {
-			return nil, err
+			rep.Missing = append(rep.Missing, missingForBorrower(tpl, scn, err)...)
+			opts.Log.Error("borrower left on the baseline; the others continue", "scenario", scn, "err", err)
+			continue
 		}
 		labels, err := store.RequireArtifact[domain.LabelSet](
 			opts.Store, classify.ArtifactKind+opts.Namespace, scn, "labels", "classify")
 		if err != nil {
-			return nil, err
+			rep.Missing = append(rep.Missing, missingForBorrower(tpl, scn, err)...)
+			opts.Log.Error("borrower left on the baseline; the others continue", "scenario", scn, "err", err)
+			continue
 		}
 
 		in := &engine.Inputs{
@@ -209,6 +215,15 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 	rep.Duration = time.Since(start)
 	return rep, nil
+}
+
+func missingForBorrower(tpl *domain.Template, scenarioID string, err error) []string {
+	clauses := tpl.ClausesFor(scenarioID)
+	out := make([]string, 0, len(clauses))
+	for _, clause := range clauses {
+		out = append(out, fmt.Sprintf("%s/%s: %v", scenarioID, clause, err))
+	}
+	return out
 }
 
 func criticTrace(r review) string {

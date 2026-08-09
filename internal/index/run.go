@@ -73,6 +73,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return nil, err
 	}
 	led := domain.NewLedger(txns)
+	accounts := domain.SortedKeys(led.AccountToScn)
 
 	docs, err := opts.Store.LoadDocuments()
 	if err != nil {
@@ -124,7 +125,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			if err != nil {
 				return degrade(fmt.Errorf("load text: %w", err))
 			}
-			scan := ScanText(text)
+			scan := ScanText(text, accounts)
 
 			in := agents.TriageInput{
 				DocID:    doc.ID,
