@@ -133,7 +133,7 @@ func computeTerm(
 		return noteTerm(term, in, rows)
 	}
 
-	cat, ok, contested := termCategory(term)
+	cat, ok, contested := termCategory(term, rows)
 	if !ok {
 		return noteTerm(term, in, rows)
 	}
@@ -148,23 +148,46 @@ func computeTerm(
 		out.Contested = true
 		out.Trace += contested
 	}
+
 	return out, nil
 }
 
-func termCategory(term domain.Term) (domain.Category, bool, string) {
+func termCategory(term domain.Term, rows []row) (domain.Category, bool, string) {
 	read, fromWording := domain.CategoryForLine(term.Line)
 	if !fromWording {
 		read, fromWording = domain.CategoryForLine(term.Description)
 	}
-	if term.Category == "" {
+	switch {
+	case term.Category == "":
 		return read, fromWording, ""
+	case !fromWording, read == term.Category:
+		return term.Category, true, ""
 	}
-	if fromWording && read != term.Category {
+
+	declared, derived := rowsIn(rows, term.Category), rowsIn(rows, read)
+	switch {
+	case declared > 0 && derived == 0:
 		return term.Category, true, fmt.Sprintf(
-			"; the specification calls this %s while the wording of the line reads as %s",
+			"; the wording of the line reads as %s, which no row carries, so the declared %s is used",
+			read, term.Category)
+	case derived > 0 && declared == 0:
+		return read, true, fmt.Sprintf(
+			"; the specification calls this %s, which no row carries, so the wording's %s is used",
 			term.Category, read)
 	}
-	return term.Category, true, ""
+	return term.Category, true, fmt.Sprintf(
+		"; the specification calls this %s and the wording reads as %s, and rows are booked to both",
+		term.Category, read)
+}
+
+func rowsIn(rows []row, cat domain.Category) int {
+	n := 0
+	for _, r := range rows {
+		if r.label.Category == cat {
+			n++
+		}
+	}
+	return n
 }
 
 func scopedEntityTerm(term domain.Term, in *Inputs, rows []row, cat domain.Category) (termResult, error) {

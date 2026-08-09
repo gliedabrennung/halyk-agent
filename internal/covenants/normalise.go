@@ -2,6 +2,7 @@ package covenants
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 )
@@ -12,6 +13,9 @@ func Normalise(spec *domain.CovenantSpec) []string {
 		return nil
 	}
 	var notes []string
+	if note := widenInstant(&spec.Period); note != "" {
+		notes = append(notes, note)
+	}
 	for i := range spec.Terms {
 		t := &spec.Terms[i]
 
@@ -22,4 +26,15 @@ func Normalise(spec *domain.CovenantSpec) []string {
 		}
 	}
 	return notes
+}
+
+func widenInstant(p *domain.Period) string {
+	if p.From.IsZero() || !p.From.Equal(p.To) {
+		return ""
+	}
+	p.From = time.Time{}
+	return fmt.Sprintf(
+		"period %s..%s has no width, and a ledger of flows holds nothing inside an instant; "+
+			"reading it as everything up to that date",
+		p.To.Format("2006-01-02"), p.To.Format("2006-01-02"))
 }

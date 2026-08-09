@@ -2,6 +2,7 @@ package covenants
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gliedabrennung/halyk-agent/internal/domain"
 )
@@ -44,5 +45,34 @@ func TestNormaliseNeverReadsAScopeOutOfTheWording(t *testing.T) {
 		if term.EntityScope != "" {
 			t.Errorf("%s picked up a scope from its wording: %+v", term.Name, term)
 		}
+	}
+}
+
+func TestNormaliseWidensAPeriodOfNoWidth(t *testing.T) {
+	day := time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC)
+	spec := &domain.CovenantSpec{Period: domain.Period{Kind: "point_in_time", From: day, To: day}}
+
+	notes := Normalise(spec)
+	if len(notes) != 1 {
+		t.Fatalf("the repair must be reported, got %v", notes)
+	}
+	if !spec.Period.From.IsZero() {
+		t.Errorf("from = %s, want it opened: an instant selects no flow", spec.Period.From)
+	}
+	if !spec.Period.To.Equal(day) {
+		t.Errorf("to = %s, want the as-of date kept", spec.Period.To)
+	}
+}
+
+func TestNormaliseLeavesAPeriodWithWidthAlone(t *testing.T) {
+	from := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC)
+	spec := &domain.CovenantSpec{Period: domain.Period{Kind: "point_in_time", From: from, To: to}}
+
+	if notes := Normalise(spec); len(notes) != 0 {
+		t.Fatalf("nothing to repair, got %v", notes)
+	}
+	if !spec.Period.From.Equal(from) {
+		t.Errorf("from = %s, want it untouched", spec.Period.From)
 	}
 }

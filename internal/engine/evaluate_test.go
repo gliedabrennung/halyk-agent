@@ -824,7 +824,7 @@ func TestANoteTermTheNotesDoNotAnswerIsUnmeasurable(t *testing.T) {
 	}
 }
 
-func TestADeclaredCategoryDecidesOverTheWording(t *testing.T) {
+func TestBothCategoriesCarryRowsSoTheDisagreementStands(t *testing.T) {
 	in := &Inputs{
 		Facts: &domain.FactBase{},
 		Labels: &domain.LabelSet{Txns: []domain.TxnLabel{
@@ -850,7 +850,7 @@ func TestADeclaredCategoryDecidesOverTheWording(t *testing.T) {
 	if v.Confidence > 0.4 {
 		t.Errorf("confidence = %v: the wording and the specification disagree, that must show", v.Confidence)
 	}
-	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "while the wording") }) {
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "booked to both") }) {
 		t.Errorf("the disagreement must be named in the trace: %q", v.Trace)
 	}
 }
@@ -896,5 +896,43 @@ func TestACategoryNoRowCarriesIsUnmeasurable(t *testing.T) {
 	}
 	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "different bucket") }) {
 		t.Errorf("the empty category must be named: %q", v.Trace)
+	}
+}
+
+func TestTheLedgerSettlesACategoryDisagreement(t *testing.T) {
+	build := func() *Inputs {
+		return &Inputs{
+			Facts:  &domain.FactBase{},
+			Labels: &domain.LabelSet{Txns: []domain.TxnLabel{label("TXN-P1-0001", domain.CatOperatingCosts)}},
+			Txns:   []domain.Txn{ledgerRow("TXN-P1-0001", 10, "Contractor", "-450000")},
+		}
+	}
+	wordingWins := spec("opex", "<=", "500000",
+		domain.Term{Name: "opex", Kind: domain.TermStatementLine,
+			Line: "Операционные расходы", Category: domain.CatOtherOperating})
+	declaredWins := spec("opex", "<=", "500000",
+		domain.Term{Name: "opex", Kind: domain.TermStatementLine,
+			Line: "Расходы на аренду помещений", Category: domain.CatOperatingCosts})
+
+	v, err := Evaluate(wordingWins, build())
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("450000")) {
+		t.Errorf("actual = %s, want 450000: no row is other_operating, the wording's bucket is", v.Actual)
+	}
+	if !slices.ContainsFunc(v.Trace, func(l string) bool { return strings.Contains(l, "wording's operating_costs is used") }) {
+		t.Errorf("the arbitration must be named: %q", v.Trace)
+	}
+
+	v, err = Evaluate(declaredWins, build())
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !v.Actual.Equal(dec("450000")) {
+		t.Errorf("actual = %s, want 450000: the declared bucket is the one with rows", v.Actual)
+	}
+	if v.Confidence > 0.4 {
+		t.Errorf("confidence = %v: the two readings disagreed, that must show", v.Confidence)
 	}
 }
