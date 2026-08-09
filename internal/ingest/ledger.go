@@ -14,7 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-var _scenarioRe = regexp.MustCompile(`^TXN-([A-Za-z0-9]+)-\d+$`)
+var _scenarioRe = regexp.MustCompile(`^TXN-([A-Za-z0-9]+)(?:-[A-Za-z0-9]+)+$`)
 
 func ScenarioIDFromTxnID(txnID string) (string, error) {
 	m := _scenarioRe.FindStringSubmatch(txnID)

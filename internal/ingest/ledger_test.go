@@ -20,8 +20,9 @@ func TestScenarioIDFromTxnID(t *testing.T) {
 		{in: "P1-0039", wantErr: true},
 		{in: "TXN-P1", wantErr: true},
 		{in: "TXN-P1-", wantErr: true},
-		{in: "TXN-P1-00A9", wantErr: true},
-		{in: "TXN-P-1-0039", wantErr: true},
+		{in: "TXN-P1-00A9", want: "P1"},
+		{in: "TXN-KC-CAP-29", want: "KC"},
+		{in: "TXN-P-1-0039", want: "P"},
 	}
 	for _, tt := range tests {
 		got, err := ScenarioIDFromTxnID(tt.in)

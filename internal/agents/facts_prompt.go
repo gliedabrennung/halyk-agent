@@ -16,7 +16,7 @@ Return STRICT JSON:
   "adjustments": [
     {
       "kind": "reclassify | exclude_period | include_period | disclosed_amount | ledger_amount_fix | ebitda_add_back | no_change",
-      "txn_id": "the transaction id the disclosure names, in the TXN-<scenario>-NNNN form given above; empty if it names none",
+      "txn_id": "the transaction id the disclosure names, copied exactly; empty if it names none",
       "counterparty": "the counterparty named, else empty",
       "amount": "decimal string, no currency sign or separators; empty if the disclosure states none",
       "from_category": "the category the amount was originally booked to, else empty",
@@ -124,7 +124,7 @@ empty — a silent note is not a note saying zero.`
 func (in FactsInput) prompt() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Borrower: %s (scenario %s)\n", in.Company, in.ScenarioID)
-	fmt.Fprintf(&b, "Its transactions are identified as TXN-%s-NNNN.\n", in.ScenarioID)
+	fmt.Fprintf(&b, "Its transactions are the ledger rows whose id begins with TXN-%s-; what follows that prefix varies, so copy an id exactly as the document prints it.\n", in.ScenarioID)
 	if len(in.MissingAmounts) > 0 {
 		fmt.Fprintf(&b, "The ledger export left the amount of these rows BLANK: %s.\n"+
 			"If any document below states what one of them was, that is a ledger_amount_fix.\n",
