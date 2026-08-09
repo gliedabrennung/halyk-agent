@@ -42,6 +42,12 @@ Before you object, rule out these things, which are correct by design and are NO
 - A subsidiary is unrestricted only where the collateral table puts its pledged share below the
   stated percentage. A transfer to a restricted subsidiary is outside a clause that limits
   transfers to unrestricted ones.
+- An add-back sits in the costs AND is added on top of them. That pairing is what an add-back
+  is, not double counting: the amount was already deducted, and the clause says it must not count
+  against the borrower. A term only takes one whose amount was in fact deducted there, so seeing
+  the row among the costs and the figure added back is the check passing, not a mistake. The
+  double count you should object to is the opposite one — a figure added back that no row ever
+  deducted.
 - Rows the clause does not name are absent on purpose. The borrower's ledger holds far more
   categories than any one covenant measures.
 
